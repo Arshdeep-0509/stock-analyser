@@ -229,11 +229,13 @@ def fetch_historical_candles(token, exchange="NSE", interval=CANDLE_INTERVAL, da
 # INDICATORS
 # ------------------------------------------------------------------
 def compute_rsi(df, period=RSI_PERIOD):
+    """Wilder's smoothed RSI - matches TradingView / broker chart RSI, unlike
+    a plain rolling-mean RSI which reacts too sharply to just the last N bars."""
     delta = df["close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
     rs = avg_gain / avg_loss
     df["rsi"] = 100 - (100 / (1 + rs))
     return df
@@ -301,38 +303,129 @@ def check_signal(df):
 
 
 # ------------------------------------------------------------------
-# FULL NSE EQUITY UNIVERSE  (confirmed from Master Trust IT support)
+# INSTRUMENT MASTER  (confirmed from Master Trust IT support)
 # ------------------------------------------------------------------
-def load_nse_equity_universe(min_price=MIN_PRICE):
-    """Download Master Trust's full instrument master (Compact.zip ->
-    CompactScrip.csv) and return [(symbol, token), ...] for every NSE equity
-    stock whose LAST CLOSE IN THAT FILE is >= min_price.
-
-    This file's close_price is a cached snapshot, not live - it's only used
-    to build a manageable scan universe. The real, live price/RSI/HA check
-    still happens per-symbol in check_signal() on every scan.
-    """
+def _download_scrip_master():
+    """Download Master Trust's full instrument master (Compact.zip -> CompactScrip.csv)."""
     resp = api_get(f"{BASE_URL}/api/v1/contract/Compact",
                     params={"info": "download"}, headers=HEADERS)
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
         with zf.open("CompactScrip.csv") as f:
-            df = pd.read_csv(f, low_memory=False)
+            return pd.read_csv(f, low_memory=False)
 
+
+def load_nse_equity_universe(min_price=MIN_PRICE):
+    """Return [(symbol, token, "NSE"), ...] for every NSE equity stock whose
+    LAST CLOSE IN THE INSTRUMENT MASTER is >= min_price.
+
+    That close_price is a cached snapshot, not live - it's only used to build
+    a manageable scan universe. The real, live price/RSI/HA check still
+    happens per-symbol in check_signal() on every scan.
+    """
+    df = _download_scrip_master()
     df = df[(df["exchange"] == "NSE") & (df["instrument_name"] == "EQ")].copy()
     df["close_price"] = pd.to_numeric(df["close_price"], errors="coerce")
     df = df[df["close_price"] >= min_price]
-    return list(df[["trading_symbol", "exchange_token"]].itertuples(index=False, name=None))
+    return [(sym, tok, "NSE") for sym, tok in
+            df[["trading_symbol", "exchange_token"]].itertuples(index=False, name=None)]
+
+
+def load_fno_futures_universe(min_price=MIN_PRICE):
+    """Return [(symbol, token, "NFO"), ...] for the CURRENT-MONTH (nearest,
+    not-yet-expired) single-stock futures (NFO/FUTSTK) contract of every
+    underlying, filtered by that contract's own last close >= min_price.
+    Same caching caveat as load_nse_equity_universe() applies.
+    """
+    df = _download_scrip_master()
+    fut = df[(df["exchange"] == "NFO") & (df["instrument_name"] == "FUTSTK")].copy()
+    fut["close_price"] = pd.to_numeric(fut["close_price"], errors="coerce")
+    fut["expiry_date"] = pd.to_datetime(fut["expiry"], format="%d-%b-%Y", errors="coerce")
+    fut = fut.dropna(subset=["close_price", "expiry_date"])
+    fut = fut[fut["expiry_date"] >= pd.Timestamp.now().normalize()]
+    fut = fut.sort_values("expiry_date").drop_duplicates("company_name", keep="first")
+    fut = fut[fut["close_price"] >= min_price]
+    return [(sym, tok, "NFO") for sym, tok in
+            fut[["trading_symbol", "exchange_token"]].itertuples(index=False, name=None)]
+
+
+def load_fno_atm_options(min_price=MIN_PRICE):
+    """Return {base_symbol: {"CE": (symbol, token), "PE": (symbol, token)}}
+    for the ATM (at-the-money), current-month option contracts of every F&O
+    stock whose underlying spot price (from the instrument master) is >=
+    min_price. "ATM" = the strike closest to that cached spot price.
+
+    Used to translate a BUY/SELL signal on the STOCK's own price into an
+    option trade suggestion (BUY -> buy this CE, SELL -> buy this PE) -
+    RSI/HA is not computed on the option premiums themselves, since they're
+    driven by time decay/volatility as much as direction.
+    """
+    df = _download_scrip_master()
+
+    equity = df[(df["exchange"] == "NSE") & (df["instrument_name"] == "EQ")].copy()
+    equity["base_symbol"] = equity["trading_symbol"].str.replace("-EQ", "", regex=False)
+    equity["close_price"] = pd.to_numeric(equity["close_price"], errors="coerce")
+    spot_price = equity.dropna(subset=["close_price"]).set_index("base_symbol")["close_price"]
+
+    opt = df[(df["exchange"] == "NFO") & (df["instrument_name"] == "OPTSTK")].copy()
+    opt["expiry_date"] = pd.to_datetime(opt["expiry"], format="%d-%b-%Y", errors="coerce")
+    opt = opt.dropna(subset=["expiry_date", "strike"])
+    opt = opt[opt["expiry_date"] >= pd.Timestamp.now().normalize()]
+    nearest_expiry = opt.groupby("company_name")["expiry_date"].min()
+
+    atm_map = {}
+    for company, expiry in nearest_expiry.items():
+        spot = spot_price.get(company)
+        if spot is None or spot < min_price:
+            continue
+        chain = opt[(opt["company_name"] == company) & (opt["expiry_date"] == expiry)]
+        atm_strike = chain.loc[(chain["strike"] - spot).abs().idxmin(), "strike"]
+        leg = chain[chain["strike"] == atm_strike]
+        contracts = {row["option_type"]: (row["trading_symbol"], row["exchange_token"])
+                     for _, row in leg.iterrows()}
+        if "CE" in contracts and "PE" in contracts:
+            atm_map[company] = contracts
+    return atm_map
+
+
+def add_option_recommendations(signals, atm_map):
+    """For every equity BUY/SELL in `signals`, if that stock has F&O options,
+    append a recommendation to buy the corresponding ATM contract:
+    BUY -> CE Buy, SELL -> PE Buy (buying a put is how a bearish view is
+    actually traded in options - there's no separate "SELL" signal)."""
+    extra = []
+    for r in signals:
+        if r["exchange"] != "NSE":
+            continue
+        base_symbol = r["symbol"].replace("-EQ", "")
+        legs = atm_map.get(base_symbol)
+        if not legs:
+            continue
+
+        option_type = "CE" if r["signal"] == "BUY" else "PE"
+        if option_type not in legs:
+            continue
+        opt_symbol, opt_token = legs[option_type]
+        opt_df = fetch_historical_candles(opt_token, exchange="NFO")
+        extra.append({
+            "symbol": opt_symbol,
+            "exchange": "NFO",
+            "signal": f"{option_type} Buy",
+            "price": opt_df.iloc[-1]["close"],
+            "rsi": r["rsi"],
+            "time": r["time"],
+        })
+    return extra
 
 
 # ------------------------------------------------------------------
 # SCANNER
 # ------------------------------------------------------------------
 def scan_watchlist(watchlist):
-    """watchlist: list of (symbol, token) tuples - see load_nse_equity_universe()."""
+    """watchlist: list of (symbol, token, exchange) tuples."""
     signals = []
-    for symbol, token in watchlist:
+    for symbol, token, exchange in watchlist:
         try:
-            df = fetch_historical_candles(token)
+            df = fetch_historical_candles(token, exchange=exchange)
             df = compute_rsi(df)
             df = compute_heikin_ashi(df)
             signal = check_signal(df)
@@ -342,6 +435,7 @@ def scan_watchlist(watchlist):
                 signals.append(
                     {
                         "symbol": symbol,
+                        "exchange": exchange,
                         "signal": signal,
                         "price": last["close"],
                         "rsi": round(last["rsi"], 2),
@@ -365,17 +459,22 @@ if __name__ == "__main__":
         print("    python3 mastertrust_rsi_ha_screener.py --login\n")
         sys.exit(1)
 
-    print("Downloading NSE equity instrument master...")
-    universe = load_nse_equity_universe()
-    print(f"Scanning {len(universe)} NSE stocks priced >= Rs.{MIN_PRICE:.0f} "
-          f"every {SCAN_EVERY_SECONDS}s. Ctrl+C to stop.")
+    print("Downloading NSE equity + F&O instrument master...")
+    equity_universe = load_nse_equity_universe()
+    futures_universe = load_fno_futures_universe()
+    atm_options = load_fno_atm_options()
+    universe = equity_universe + futures_universe
+    print(f"Scanning {len(equity_universe)} NSE stocks + {len(futures_universe)} stock futures "
+          f"(priced >= Rs.{MIN_PRICE:.0f}), with CE/PE Buy suggestions for "
+          f"{len(atm_options)} F&O stocks, every {SCAN_EVERY_SECONDS}s. Ctrl+C to stop.")
     while True:
         results = scan_watchlist(universe)
+        results += add_option_recommendations(results, atm_options)
         if not results:
             print(f"{datetime.now()}  no signals")
         for r in results:
             print(
-                f"{r['time']}  {r['symbol']:10s}  {r['signal']:4s}  "
+                f"{r['time']}  [{r['exchange']}] {r['symbol']:18s}  {r['signal']:7s}  "
                 f"price={r['price']:.2f}  rsi={r['rsi']}"
             )
         time.sleep(SCAN_EVERY_SECONDS)
