@@ -76,6 +76,7 @@ RSI_BUY_LOW = 60
 RSI_BUY_HIGH = 65
 RSI_SELL_LOW = 35
 RSI_SELL_HIGH = 40
+BREAKOUT_LOOKBACK = 20                      # candles used as the breakout high/low range
 SCAN_EVERY_SECONDS = 300                    # re-scan every 5 minutes
 
 HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
@@ -302,6 +303,32 @@ def check_signal(df):
     return None
 
 
+def check_breakout(df, lookback=BREAKOUT_LOOKBACK):
+    """
+    Independent of check_signal() - returns (signal, level) for the LAST
+    completed candle, or (None, None).
+
+    BREAKOUT-UP: last candle's close is above `level`, the highest high of
+    the previous `lookback` candles. BREAKOUT-DOWN: mirrored - close is
+    below `level`, the lowest low of the previous `lookback` candles.
+    """
+    if len(df) < lookback + 1:
+        return None, None
+
+    last = df.iloc[-1]
+    if last["close"] < MIN_PRICE:
+        return None, None
+
+    prior = df.iloc[-(lookback + 1):-1]
+    range_high = prior["high"].max()
+    range_low = prior["low"].min()
+    if last["close"] > range_high:
+        return "BREAKOUT-UP", range_high
+    if last["close"] < range_low:
+        return "BREAKOUT-DOWN", range_low
+    return None, None
+
+
 # ------------------------------------------------------------------
 # INSTRUMENT MASTER  (confirmed from Master Trust IT support)
 # ------------------------------------------------------------------
@@ -396,6 +423,8 @@ def add_option_recommendations(signals, atm_map):
     for r in signals:
         if r["exchange"] != "NSE":
             continue
+        if r["signal"] not in ("BUY", "SELL"):
+            continue
         base_symbol = r["symbol"].replace("-EQ", "")
         legs = atm_map.get(base_symbol)
         if not legs:
@@ -429,15 +458,28 @@ def scan_watchlist(watchlist):
             df = compute_rsi(df)
             df = compute_heikin_ashi(df)
             signal = check_signal(df)
+            breakout, breakout_level = check_breakout(df)
 
+            last = df.iloc[-1]
             if signal:
-                last = df.iloc[-1]
                 signals.append(
                     {
                         "symbol": symbol,
                         "exchange": exchange,
                         "signal": signal,
                         "price": last["close"],
+                        "rsi": round(last["rsi"], 2),
+                        "time": last["datetime"],
+                    }
+                )
+            if breakout:
+                signals.append(
+                    {
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "signal": breakout,
+                        "price": last["close"],
+                        "level": breakout_level,
                         "rsi": round(last["rsi"], 2),
                         "time": last["datetime"],
                     }
@@ -469,12 +511,19 @@ if __name__ == "__main__":
           f"{len(atm_options)} F&O stocks, every {SCAN_EVERY_SECONDS}s. Ctrl+C to stop.")
     while True:
         results = scan_watchlist(universe)
-        results += add_option_recommendations(results, atm_options)
-        if not results:
+        # equity (NSE) signals are still computed above - needed to derive the
+        # CE/PE Buy recommendations - but only NFO (futures + options) rows
+        # are actually shown, per request to hide equity from the output.
+        option_recs = add_option_recommendations(results, atm_options)
+        visible = [r for r in results if r["exchange"] != "NSE"] + option_recs
+        if not visible:
             print(f"{datetime.now()}  no signals")
-        for r in results:
-            print(
-                f"{r['time']}  [{r['exchange']}] {r['symbol']:18s}  {r['signal']:7s}  "
+        for r in visible:
+            line = (
+                f"{r['time']}  [{r['exchange']}] {r['symbol']:18s}  {r['signal']:13s}  "
                 f"price={r['price']:.2f}  rsi={r['rsi']}"
             )
+            if "level" in r:
+                line += f"  level={r['level']:.2f}"
+            print(line)
         time.sleep(SCAN_EVERY_SECONDS)
