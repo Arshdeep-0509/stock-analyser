@@ -1,0 +1,1 @@
+export { RsiHaPage } from './RsiHaPage'

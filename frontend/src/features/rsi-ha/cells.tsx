@@ -1,0 +1,204 @@
+import { useEffect, useRef, useState } from 'react'
+import { Link2 } from 'lucide-react'
+import { Badge } from '../../components/ui/Badge'
+import { Tooltip } from '../../components/ui/Tooltip'
+import { cn } from '../../lib/cn'
+import { formatINR, formatISTTime, formatNumber } from '../../lib/formatters'
+import type { SignalKind } from '../../types/domain'
+import type { InstrumentType } from './rowHelpers'
+
+const FLASH_DURATION_MS = 400
+
+// ---------------------------------------------------------------------------
+// Signal badge
+// ---------------------------------------------------------------------------
+
+export function SignalBadge({ signal, onHoverDerived }: { signal: SignalKind; onHoverDerived?: (hovering: boolean) => void }) {
+  switch (signal) {
+    case 'BUY':
+      return <Badge variant="bullish">BUY</Badge>
+    case 'SELL':
+      return <Badge variant="bearish">SELL</Badge>
+    case 'BREAKOUT-UP':
+      return (
+        <Badge variant="bullish" outline>
+          BREAKOUT-UP
+        </Badge>
+      )
+    case 'BREAKOUT-DOWN':
+      return (
+        <Badge variant="bearish" outline>
+          BREAKOUT-DOWN
+        </Badge>
+      )
+    case 'CE Buy':
+    case 'PE Buy':
+      return (
+        <span onMouseEnter={() => onHoverDerived?.(true)} onMouseLeave={() => onHoverDerived?.(false)}>
+          <Badge variant="neutral" icon={<Link2 className="h-3 w-3" />}>
+            {signal}
+          </Badge>
+        </span>
+      )
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Instrument type / exchange chips
+// ---------------------------------------------------------------------------
+
+const instrumentTypeClasses: Record<InstrumentType, string> = {
+  EQ: 'text-text-secondary',
+  FUT: 'text-neutral',
+  CE: 'text-bullish',
+  PE: 'text-bearish',
+}
+
+export function InstrumentTypeChip({ type }: { type: InstrumentType }) {
+  return <span className={cn('font-mono text-[11px] font-medium', instrumentTypeClasses[type])}>{type}</span>
+}
+
+export function ExchangeChip({ exchange }: { exchange: 'NSE' | 'NFO' }) {
+  return (
+    <span className="rounded border border-border-hairline bg-surface px-1 py-px font-mono text-[10px] text-text-muted">
+      {exchange}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Time
+// ---------------------------------------------------------------------------
+
+export function TimeCell({ epochSeconds }: { epochSeconds: number }) {
+  return <span className="font-mono tabular-nums text-text-secondary">{formatISTTime(new Date(epochSeconds * 1000))}</span>
+}
+
+// ---------------------------------------------------------------------------
+// RSI: value + inline 0-100 bar with the BUY/SELL bands shaded
+// ---------------------------------------------------------------------------
+
+export function RsiCell({ rsi, inherited }: { rsi: number; inherited?: string }) {
+  if (Number.isNaN(rsi)) {
+    return <span className="font-mono tabular-nums text-text-muted">—</span>
+  }
+
+  const content = (
+    <span className={cn('inline-flex items-center gap-1.5', inherited && 'opacity-50')}>
+      <span className="w-9 font-mono tabular-nums text-text-primary">{formatNumber(rsi, 1)}</span>
+      <span className="relative h-[14px] w-16 overflow-hidden rounded-sm border border-border-hairline bg-surface">
+        <span className="absolute inset-y-0 bg-bearish/25" style={{ left: '35%', width: '5%' }} aria-hidden="true" />
+        <span className="absolute inset-y-0 bg-bullish/25" style={{ left: '60%', width: '5%' }} aria-hidden="true" />
+        <span
+          className="absolute inset-y-0 w-[2px] bg-text-primary"
+          style={{ left: `${Math.max(0, Math.min(100, rsi))}%` }}
+          aria-hidden="true"
+        />
+      </span>
+    </span>
+  )
+
+  if (!inherited) return content
+  return (
+    <Tooltip label={`inherited from underlying ${inherited}`} side="top">
+      {content}
+    </Tooltip>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// HA streak sparkline: last N HA candle colours
+// ---------------------------------------------------------------------------
+
+/**
+ * Bars sit on a shared centre baseline and grow UP for green / DOWN for red
+ * (mirroring how an actual up/down candle reads), rather than same-height
+ * bars distinguished by colour alone — a colourblind viewer can still read
+ * the streak shape, not just the aria-label.
+ */
+export function HaStreakSparkline({ colors }: { colors?: ('green' | 'red')[] }) {
+  if (!colors || colors.length === 0) {
+    return <span className="text-text-muted">—</span>
+  }
+  return (
+    <span className="inline-flex h-4 items-center gap-px" aria-label={`Heikin-Ashi streak: ${colors.join(', ')}`}>
+      {colors.map((color, i) => (
+        <span key={i} className="flex h-full w-1 flex-col justify-center">
+          <span className={cn('w-full rounded-[1px]', color === 'green' ? 'h-2.5 self-end bg-bullish' : 'h-1.5 self-start bg-bearish')} />
+        </span>
+      ))}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Level (breakout only)
+// ---------------------------------------------------------------------------
+
+export function LevelCell({ level }: { level?: number }) {
+  if (level === undefined) return <span className="text-text-muted">—</span>
+  return <span className="font-mono tabular-nums text-text-secondary">{formatINR(level)}</span>
+}
+
+// ---------------------------------------------------------------------------
+// Price (static — the price the signal fired at)
+// ---------------------------------------------------------------------------
+
+export function PriceCell({ price }: { price: number }) {
+  return <span className="font-mono tabular-nums text-text-primary">{formatINR(price)}</span>
+}
+
+// ---------------------------------------------------------------------------
+// Live LTP — flashes green/red on change, background only, never reflows
+// ---------------------------------------------------------------------------
+
+export function LtpCell({ ltp }: { ltp: number | undefined }) {
+  const [flash, setFlash] = useState<'up' | 'down' | null>(null)
+  const prevRef = useRef(ltp)
+
+  useEffect(() => {
+    const prev = prevRef.current
+    if (ltp !== undefined && prev !== undefined && ltp !== prev) {
+      setFlash(ltp > prev ? 'up' : 'down')
+      const timer = window.setTimeout(() => setFlash(null), FLASH_DURATION_MS)
+      prevRef.current = ltp
+      return () => window.clearTimeout(timer)
+    }
+    prevRef.current = ltp
+  }, [ltp])
+
+  return (
+    <span
+      className={cn(
+        'inline-block rounded px-1 font-mono tabular-nums text-text-primary transition-colors duration-300',
+        flash === 'up' && 'bg-bullish/25',
+        flash === 'down' && 'bg-bearish/25',
+      )}
+    >
+      {ltp === undefined ? <span className="text-text-muted">—</span> : formatINR(ltp)}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Change % vs signal price
+// ---------------------------------------------------------------------------
+
+export function ChangePercentCell({ value }: { value: number | null }) {
+  if (value === null) return <span className="font-mono tabular-nums text-text-muted">—</span>
+  const positive = value > 0
+  const negative = value < 0
+  return (
+    <span
+      className={cn(
+        'font-mono tabular-nums',
+        positive && 'text-bullish',
+        negative && 'text-bearish',
+        !positive && !negative && 'text-text-secondary',
+      )}
+    >
+      {positive ? '+' : ''}
+      {formatNumber(value, 2)}%
+    </span>
+  )
+}

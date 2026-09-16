@@ -1,0 +1,139 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Surfaces (stored as "r g b" so Tailwind's opacity modifiers work, e.g. bg-panel/50) */
+  --color-surface: 11 15 20; /* #0B0F14 */
+  --color-panel: 17 24 32; /* #111820 */
+  --color-border: 30 42 54; /* #1E2A36 */
+  --color-border-hairline: 23 33 43; /* #17212B */
+
+  /* Text */
+  --color-text-primary: 230 237 243; /* #E6EDF3 */
+  --color-text-secondary: 139 154 168; /* #8B9AA8 */
+  --color-text-muted: 90 107 122; /* #5A6B7A */
+
+  /* Semantic */
+  --color-bullish: 38 161 123; /* #26A17B */
+  --color-bearish: 229 72 77; /* #E5484D */
+  --color-warning: 227 160 8; /* #E3A008 */
+  --color-neutral: 74 144 217; /* #4A90D9 */
+
+  /* Spacing grid (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+
+  /* Layout */
+  --topbar-height: 56px;
+  --rail-width: 56px;
+  --statusbar-height: 28px;
+  --row-height: 32px;
+
+  color-scheme: dark;
+}
+
+/*
+ * A real light palette, not an inversion: elevated surfaces (panel) go
+ * brighter than the base (surface), same direction as dark mode's
+ * surface->panel step, just anchored near white instead of near black.
+ * Semantic colours (bullish/bearish/warning/neutral) are independently
+ * darkened/saturated for AA contrast against a white panel, not reused
+ * verbatim from the dark palette.
+ */
+:root[data-theme='light'] {
+  --color-surface: 245 247 250; /* #F5F7FA */
+  --color-panel: 255 255 255; /* #FFFFFF */
+  --color-border: 223 229 237; /* #DFE5ED */
+  --color-border-hairline: 234 238 243; /* #EAEEF3 */
+
+  --color-text-primary: 16 24 40; /* #101828 */
+  --color-text-secondary: 71 84 103; /* #475467 */
+  --color-text-muted: 138 150 166; /* #8A96A6 */
+
+  --color-bullish: 15 122 89; /* #0F7A59 */
+  --color-bearish: 200 40 45; /* #C8282D */
+  --color-warning: 161 98 7; /* #A16207 */
+  --color-neutral: 30 96 173; /* #1E60AD */
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: rgb(var(--color-surface));
+  color: rgb(var(--color-text-primary));
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.font-mono,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/*
+ * One rule, every interactive element, in place of auditing focus styles
+ * component-by-component. `:focus-visible` (not `:focus`) so mouse clicks
+ * don't leave a ring behind, only keyboard/programmatic focus does.
+ */
+:focus-visible {
+  outline: 2px solid rgb(var(--color-neutral));
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* New signal row: a 1.5s left-edge accent that fades out once, on mount only (never re-triggers on re-render). */
+@keyframes row-enter-accent {
+  0% {
+    box-shadow: inset 3px 0 0 0 rgb(var(--color-neutral));
+    background-color: rgb(var(--color-neutral) / 0.08);
+  }
+  100% {
+    box-shadow: inset 3px 0 0 0 rgb(var(--color-neutral) / 0);
+    background-color: rgb(var(--color-neutral) / 0);
+  }
+}
+
+.row-enter {
+  animation: row-enter-accent 1.5s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-enter {
+    animation: none;
+  }
+
+  /*
+   * Blanket safety net for every OTHER animation/transition in the app
+   * (drawers, toasts, hover states, the scan-progress bar, ...) so nothing
+   * has to be audited component-by-component — .row-enter above is the one
+   * deliberate, named exception (per product decision: it's still allowed
+   * up to 1.5s), everything else collapses to effectively instant.
+   */
+  *:not(.row-enter),
+  *:not(.row-enter)::before,
+  *:not(.row-enter)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
