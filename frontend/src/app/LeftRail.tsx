@@ -1,4 +1,3 @@
-import { Bell, ScanSearch, Star, SlidersHorizontal, History, Settings } from 'lucide-react'
 import { Tooltip } from '../components/ui/Tooltip'
 import { AlertsDrawer } from '../features/rsi-ha/AlertsDrawer'
 import { HistoryDrawer } from '../features/rsi-ha/HistoryDrawer'
@@ -7,20 +6,13 @@ import { SettingsDrawer } from '../features/rsi-ha/SettingsDrawer'
 import { WatchlistsDrawer } from '../features/rsi-ha/WatchlistsDrawer'
 import { PanelErrorBoundary } from '../components/ui/PanelErrorBoundary'
 import { useAlertStore } from '../store/alertStore'
-import { useUiStore, type PanelKey } from '../store/uiStore'
+import { useUiStore } from '../store/uiStore'
 import { cn } from '../lib/cn'
 import { dataSource } from './dataSource'
+import { railItems } from './railItems'
 import { useScreenerStore } from './screenerStore'
 
-const railItems: ReadonlyArray<{ icon: typeof ScanSearch; label: string; panel: PanelKey | null }> = [
-  { icon: ScanSearch, label: 'Screener', panel: null },
-  { icon: Star, label: 'Watchlists', panel: 'watchlists' },
-  { icon: SlidersHorizontal, label: 'Parameters', panel: 'parameters' },
-  { icon: Bell, label: 'Alerts', panel: 'alerts' },
-  { icon: History, label: 'History', panel: 'history' },
-  { icon: Settings, label: 'Settings', panel: 'settings' },
-]
-
+/** Vertical icon rail — the desktop/tablet nav, hidden below `sm` in favour of MobileNavChips. */
 export function LeftRail() {
   const openPanel = useUiStore((s) => s.openPanel)
   const togglePanel = useUiStore((s) => s.togglePanel)
@@ -28,7 +20,7 @@ export function LeftRail() {
 
   return (
     <>
-      <nav aria-label="Sections" className="flex w-rail shrink-0 flex-col items-center gap-1 border-r border-border bg-panel py-3">
+      <nav aria-label="Sections" className="hidden w-rail shrink-0 flex-col items-center gap-1 border-r border-border bg-panel py-3 sm:flex">
         {railItems.map(({ icon: Icon, label, panel }, index) => (
           <Tooltip key={label} label={label} side="right">
             <button

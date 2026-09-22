@@ -26,11 +26,15 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'RSI-HA' })).toBeInTheDocument()
   })
 
-  it('renders the left rail with icon-only navigation items', () => {
+  it('renders the same navigation destinations twice — the desktop icon rail and the <sm mobile chip strip', () => {
     renderAppShell('/rsi-ha')
 
-    expect(screen.getByRole('button', { name: 'Screener' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Watchlists' })).toBeInTheDocument()
+    // jsdom doesn't evaluate the `hidden sm:flex` / `sm:hidden` CSS that
+    // keeps only one of the two visible at any real viewport width, so both
+    // are present in the DOM here — that's the point: Parameters and
+    // Watchlists must stay reachable from either representation.
+    expect(screen.getAllByRole('button', { name: 'Screener' }).length).toBe(2)
+    expect(screen.getAllByRole('button', { name: 'Watchlists' }).length).toBe(2)
   })
 
   it('renders the bottom status bar placeholders', () => {

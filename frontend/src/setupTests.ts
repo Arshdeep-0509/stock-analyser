@@ -6,10 +6,11 @@ afterEach(() => {
   cleanup()
 })
 
-// jsdom doesn't implement matchMedia — used by useIsDesktop() for the
-// responsive table/card split. Tests run at the "desktop" layout by default
-// (matches: true) since that's what the existing table-focused test suite
-// assumes; a narrow-viewport test overrides this per-test where it matters.
+// jsdom doesn't implement matchMedia — used by useMediaQuery() for the
+// responsive table/card split and other structural breakpoint swaps. Tests
+// run at the "desktop" layout by default (matches: true) since that's what
+// the existing table-focused test suite assumes; a narrow-viewport test
+// overrides this per-test where it matters.
 if (!window.matchMedia) {
   window.matchMedia = (query: string): MediaQueryList =>
     ({

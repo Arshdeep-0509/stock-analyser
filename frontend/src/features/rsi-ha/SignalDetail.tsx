@@ -15,6 +15,7 @@ import { haStreakLength } from '../../strategy/indicators'
 import { BASE_INTERVAL_MINUTES, resampleCandles } from '../../strategy/resampleCandles'
 import type { AnalyzedCandle, Candle } from '../../types/domain'
 import { ExchangeChip, LtpCell, SignalBadge } from './cells'
+import { CHART_HEIGHT_CLASS } from './chartHeight'
 import { getInstrumentType, isDerivedRow } from './rowHelpers'
 import { SignalChart } from './SignalChart'
 
@@ -134,9 +135,10 @@ export function SignalDetail({ row, rowList, store, onClose, onNavigate }: Signa
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-surface/70" onClick={onClose} />
-      <div className="relative flex h-full w-full max-w-[640px] flex-col border-l border-border bg-panel">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+      {/* min(640px, 100%): the fixed width never exceeds the viewport itself right at the sm breakpoint (480px < 640px). */}
+      <div className="relative flex h-full w-full flex-col border-l border-border bg-panel sm:w-[min(640px,100%)]">
+        {/* Header — sticky, with the prev/next/close nav buttons kept within thumb reach at the top rather than scrolling away. */}
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-panel px-4 py-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-base font-semibold text-text-primary">{row.symbol}</h2>
@@ -197,7 +199,7 @@ export function SignalDetail({ row, rowList, store, onClose, onNavigate }: Signa
             {candles === null ? (
               <ChartSkeleton />
             ) : analyzed.length === 0 ? (
-              <div className="flex h-[360px] items-center justify-center text-xs text-text-muted">No candle history available</div>
+              <div className={cn('flex items-center justify-center text-xs text-text-muted', CHART_HEIGHT_CLASS)}>No candle history available</div>
             ) : (
               // Its own boundary, nested inside the outer Screener one — a
               // chart-library crash (bad candle data, a lightweight-charts
@@ -301,7 +303,7 @@ export function SignalDetail({ row, rowList, store, onClose, onNavigate }: Signa
 
 function ChartSkeleton() {
   return (
-    <div className="flex h-[360px] flex-col justify-end gap-1 p-2" aria-label="Loading chart" role="status">
+    <div className={cn('flex flex-col justify-end gap-1 p-2', CHART_HEIGHT_CLASS)} aria-label="Loading chart" role="status">
       <div className="flex flex-1 items-end gap-1">
         {Array.from({ length: 24 }, (_, i) => (
           <Skeleton key={i} className="w-full" style={{ height: `${20 + ((i * 37) % 60)}%` }} />

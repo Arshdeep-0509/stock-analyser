@@ -47,7 +47,8 @@ export function MockDevtoolsPanel({ client }: MockDevtoolsPanelProps) {
   if (!visible) return null
 
   return (
-    <div className="fixed bottom-10 right-4 z-50 w-80 rounded border border-border bg-panel p-3 font-mono text-xs text-text-primary shadow-lg">
+    // z-40, below every real drawer/modal — same rationale as ScanPerfReadout.
+    <div className="fixed bottom-10 right-4 z-40 w-80 rounded border border-border bg-panel p-3 font-mono text-xs text-text-primary shadow-lg">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-semibold text-text-secondary">MOCK DEVTOOLS</span>
         <button type="button" onClick={() => setVisible(false)} aria-label="Close" className="text-text-secondary hover:text-text-primary">

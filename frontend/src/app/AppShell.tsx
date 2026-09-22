@@ -8,6 +8,7 @@ import { ToastStack } from '../features/rsi-ha/ToastStack'
 import { useUiStore } from '../store/uiStore'
 import { dataSource } from './dataSource'
 import { FirstRunTour } from './FirstRunTour'
+import { MobileNavChips } from './MobileNavChips'
 import { ShortcutsOverlay } from './ShortcutsOverlay'
 import { useGlobalShortcuts } from './useGlobalShortcuts'
 import { useScreenerStore } from './screenerStore'
@@ -30,8 +31,13 @@ export function AppShell() {
   useGlobalShortcuts(useScreenerStore, dataSource)
 
   return (
-    <div className="flex h-screen flex-col bg-surface">
+    // dvh, not vh: on mobile, browser chrome (the address bar) shows and
+    // hides as the user scrolls, and vh doesn't account for that — it would
+    // clip the status bar/replay bar under the chrome instead of resizing
+    // around it the way dvh does.
+    <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-surface">
       <TopBar />
+      <MobileNavChips />
       <div className="flex min-h-0 flex-1">
         <LeftRail />
         <main className="min-w-0 flex-1 overflow-y-auto">

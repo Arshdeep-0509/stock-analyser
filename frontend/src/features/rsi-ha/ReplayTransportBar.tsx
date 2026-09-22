@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Pause, Play, RotateCcw, SkipForward, Zap } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
+import { cn } from '../../lib/cn'
 import { formatISTDate, formatISTTime } from '../../lib/formatters'
 import { findNextSignalTimestamp } from './findNextSignal'
 import type { ClockSpeed } from '../../data/mock'
@@ -142,66 +143,87 @@ export function ReplayTransportBar({ dataSource, store }: ReplayTransportBarProp
   const sessionSpan = Math.max(1, devState.sessionEnd - devState.sessionStart)
   const progress = ((displayNow - devState.sessionStart) / sessionSpan) * 100
 
+  const transportButtons = (
+    <div className="flex shrink-0 items-center gap-1">
+      <Button size="sm" variant="ghost" onClick={restart} aria-label="Restart">
+        <RotateCcw className="h-3.5 w-3.5" />
+      </Button>
+      <Button size="sm" variant="ghost" onClick={isPlaying ? pause : play} aria-label={isPlaying ? 'Pause' : 'Play'}>
+        {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={stepForward} aria-label="Step forward one bar" disabled={isPlaying}>
+        <SkipForward className="h-3.5 w-3.5" />
+      </Button>
+      <Button size="sm" variant="ghost" onClick={jumping ? cancelJump : () => void jumpToNextSignal()} disabled={isPlaying}>
+        <Zap className="h-3.5 w-3.5" />{' '}
+        {jumping ? (jumpProgress > 1 ? `Searching… (attempt ${jumpProgress}, click to cancel)` : 'Searching… (click to cancel)') : 'Next signal'}
+      </Button>
+    </div>
+  )
+
+  const scrubber = (
+    <input
+      type="range"
+      min={devState.sessionStart}
+      max={devState.sessionEnd}
+      value={displayNow}
+      onChange={(e) => {
+        setIsPlaying(false)
+        pinAndRescan(Number(e.target.value))
+      }}
+      className={cn(
+        'h-11 flex-1 accent-neutral sm:h-1 sm:w-32 sm:flex-none md:w-auto md:flex-1',
+        '[&::-webkit-slider-thumb]:h-11 [&::-webkit-slider-thumb]:w-11 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-neutral [&::-webkit-slider-thumb]:bg-text-primary sm:[&::-webkit-slider-thumb]:h-3.5 sm:[&::-webkit-slider-thumb]:w-3.5',
+      )}
+      style={{ background: `linear-gradient(to right, rgb(var(--color-neutral)) ${progress}%, rgb(var(--color-border)) ${progress}%)` }}
+      aria-label="Session scrubber"
+    />
+  )
+
+  const speedChips = (
+    <div className="flex shrink-0 items-center gap-0.5">
+      {SPEED_OPTIONS.map((speed) => (
+        <button
+          key={speed}
+          type="button"
+          onClick={() => dataSource.setSpeed(speed)}
+          className={cn(
+            'h-8 shrink-0 rounded border px-1.5 text-xs sm:h-auto sm:py-0.5',
+            devState.clockSpeed === speed ? 'border-neutral text-neutral' : 'border-border text-text-secondary hover:text-text-primary',
+          )}
+        >
+          {speed}x
+        </button>
+      ))}
+    </div>
+  )
+
   return (
-    // overflow-x-auto rather than wrapping: this bar's controls only make
-    // sense as one continuous transport strip (scrubber included) — on a
-    // narrow viewport it scrolls horizontally within itself instead of
-    // ever blowing out the page's width, same pattern as StatusBar below it.
-    <div className="flex h-9 shrink-0 items-center gap-3 overflow-x-auto whitespace-nowrap border-t border-border bg-panel px-3 text-xs">
-      <div className="flex shrink-0 items-center gap-1">
-        <Button size="sm" variant="ghost" onClick={restart} aria-label="Restart">
-          <RotateCcw className="h-3.5 w-3.5" />
-        </Button>
-        <Button size="sm" variant="ghost" onClick={isPlaying ? pause : play} aria-label={isPlaying ? 'Pause' : 'Play'}>
-          {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={stepForward} aria-label="Step forward one bar" disabled={isPlaying}>
-          <SkipForward className="h-3.5 w-3.5" />
-        </Button>
-        <Button size="sm" variant="ghost" onClick={jumping ? cancelJump : () => void jumpToNextSignal()} disabled={isPlaying}>
-          <Zap className="h-3.5 w-3.5" />{' '}
-          {jumping ? (jumpProgress > 1 ? `Searching… (attempt ${jumpProgress}, click to cancel)` : 'Searching… (click to cancel)') : 'Next signal'}
-        </Button>
+    <div className="flex shrink-0 flex-col gap-1.5 border-t border-border bg-panel px-4 py-1.5 text-xs sm:h-9 sm:flex-row sm:items-center sm:gap-3 sm:py-0">
+      {/*
+        Below sm: transport buttons + date on row one, speed chips + scrubber
+        on row two, seed/new-market as an overflow-scrollable row three (the
+        percentage/next-scan-style readout some rows would otherwise carry is
+        dropped here, not just hidden, since there's nothing analogous to
+        hide — the date/time text already does that job compactly). At sm+
+        it collapses back to the single continuous strip, horizontally
+        scrollable within itself if it's ever still too tight.
+      */}
+      <div className="flex items-center gap-2 overflow-x-auto sm:contents">
+        {transportButtons}
+        <span className="shrink-0 font-mono tabular-nums text-text-secondary sm:w-36">
+          {formatISTDate(new Date(displayNow * 1000))} {formatISTTime(new Date(displayNow * 1000))}
+        </span>
       </div>
 
-      <span className="w-36 shrink-0 font-mono tabular-nums text-text-secondary">
-        {formatISTDate(new Date(displayNow * 1000))} {formatISTTime(new Date(displayNow * 1000))}
-      </span>
-
-      <input
-        type="range"
-        min={devState.sessionStart}
-        max={devState.sessionEnd}
-        value={displayNow}
-        onChange={(e) => {
-          setIsPlaying(false)
-          pinAndRescan(Number(e.target.value))
-        }}
-        className="h-1 w-32 shrink-0 accent-neutral desktop:w-auto desktop:flex-1"
-        style={{ background: `linear-gradient(to right, rgb(var(--color-neutral)) ${progress}%, rgb(var(--color-border)) ${progress}%)` }}
-        aria-label="Session scrubber"
-      />
-
-      <div className="flex shrink-0 items-center gap-0.5">
-        {SPEED_OPTIONS.map((speed) => (
-          <button
-            key={speed}
-            type="button"
-            onClick={() => dataSource.setSpeed(speed)}
-            className={
-              devState.clockSpeed === speed
-                ? 'rounded border border-neutral px-1.5 py-0.5 text-neutral'
-                : 'rounded border border-border px-1.5 py-0.5 text-text-secondary hover:text-text-primary'
-            }
-          >
-            {speed}x
-          </button>
-        ))}
+      <div className="flex items-center gap-2 sm:contents">
+        {speedChips}
+        {scrubber}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
-        <Input value={seedInput} onChange={(e) => setSeedInput(e.target.value)} className="w-20" aria-label="Seed" />
-        <Button size="sm" variant="secondary" onClick={newMarket}>
+      <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto sm:contents">
+        <Input value={seedInput} onChange={(e) => setSeedInput(e.target.value)} className="w-20 shrink-0" aria-label="Seed" />
+        <Button size="sm" variant="secondary" className="shrink-0" onClick={newMarket}>
           New market
         </Button>
       </div>

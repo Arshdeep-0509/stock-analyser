@@ -1,13 +1,11 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Copy, FileJson, Pause, Pin, Play, RotateCcw, Rows3, Search, SlidersHorizontal, Volume2, VolumeX } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Copy, FileJson, Pause, Pin, Play, RotateCcw, Rows3, Volume2, VolumeX } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BottomSheet } from '../../components/ui/BottomSheet'
 import { Button } from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { cn } from '../../lib/cn'
 import { formatISTTime } from '../../lib/formatters'
-import { useIsDesktop } from '../../lib/useIsDesktop'
+import { useMediaQuery } from '../../lib/useMediaQuery'
 import type { ScreenerStore } from '../../store/screenerStore'
 import type { ScreenerRow } from '../../store/types'
 import type { SignalKind } from '../../types/domain'
@@ -31,6 +29,11 @@ export interface SignalsTableProps {
 const ROW_HEIGHT = 32
 const GROUP_HEADER_HEIGHT = 28
 const GRID_TEMPLATE = '84px 180px 52px 140px 96px 96px 84px 118px 64px 96px 96px'
+// Sum of GRID_TEMPLATE's columns — the eleven-column grid's natural width.
+// Below this, the grid gets its own horizontal scroller rather than
+// squeezing columns (a fixed min-width wider than 320px is only allowed
+// inside a scroller, which this is).
+const GRID_MIN_WIDTH = 1106
 const SEARCH_INPUT_ID = 'symbol-search'
 
 interface ColumnMeta {
@@ -93,10 +96,12 @@ export function SignalsTable({ store }: SignalsTableProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [hoveredUnderlying, setHoveredUnderlying] = useState<string | null>(null)
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [announcement, setAnnouncement] = useState('')
 
-  const isDesktop = useIsDesktop()
+  // The one threshold in the app that isn't a named breakpoint — an
+  // eleven-column grid genuinely doesn't fit before ~900px, which sits
+  // between md (768) and lg (1024). See useMediaQuery's own comment.
+  const isDesktop = useMediaQuery('(min-width: 900px)')
   const parentRef = useRef<HTMLDivElement>(null)
   const seenRowIds = useRef<Set<string>>(new Set())
   const freshRowIds = useRef<Set<string>>(new Set())
@@ -209,6 +214,20 @@ export function SignalsTable({ store }: SignalsTableProps) {
     overscan: 12,
   })
 
+  // @tanstack/react-virtual caches measured sizes against its scroll
+  // element. This grid and SignalCardList's own virtualizer are separate
+  // component trees swapped by `isDesktop`, so parentRef's underlying DOM
+  // node changes out from under this SAME virtualizer instance on every
+  // flip (unmounted while card mode is showing, a fresh element on the way
+  // back) — without an explicit re-measure here, react-virtual can go on
+  // using stale offsets computed against the OLD element and stack rows on
+  // top of each other at the wrong pitch. Re-measuring on every isDesktop
+  // flip (not just mount) is what actually fixes it.
+  useEffect(() => {
+    if (isDesktop) virtualizer.measure()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDesktop])
+
   // Keyboard nav: j/k move selection, Enter opens the drawer, Esc closes it, / focuses search.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -245,12 +264,6 @@ export function SignalsTable({ store }: SignalsTableProps) {
 
   const secondsToNextScan = nextScanAt !== null ? Math.max(0, nextScanAt - now) : null
 
-  const filterBarProps = {
-    filters,
-    showNseEquityRows,
-    onShowNseEquityRowsChange: (v: boolean) => store.getState().setShowNseEquityRows(v),
-  }
-
   return (
     <div className="flex h-full flex-col">
       {/* Visually hidden; announces new signals to screen readers without stealing focus. */}
@@ -261,35 +274,33 @@ export function SignalsTable({ store }: SignalsTableProps) {
       <UniverseSelector store={store} />
       <ParamsOverrideBanner store={store} />
 
-      {isDesktop ? (
-        <FilterBar {...filterBarProps} />
-      ) : (
-        <>
-          <div className="flex items-center gap-2 border-b border-border bg-panel px-3 py-2">
-            <span className="relative inline-flex flex-1 items-center">
-              <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-text-muted" />
-              <Input
-                id="symbol-search"
-                value={filters.searchInput}
-                onChange={(e) => filters.setSearchInput(e.target.value)}
-                placeholder="Search symbol…"
-                className="w-full pl-7"
-                aria-label="Search symbol"
-              />
-            </span>
-            <Button size="sm" variant="secondary" onClick={() => setMobileFiltersOpen(true)}>
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              Filters
-              {filters.activeFilterCount > 0 && <span className="ml-0.5 text-neutral">({filters.activeFilterCount})</span>}
-            </Button>
-          </div>
-          <BottomSheet open={mobileFiltersOpen} onClose={() => setMobileFiltersOpen(false)} title="Filters">
-            <FilterBar {...filterBarProps} hideSearch />
-          </BottomSheet>
-        </>
+      <FilterBar filters={filters} showNseEquityRows={showNseEquityRows} onShowNseEquityRowsChange={(v) => store.getState().setShowNseEquityRows(v)} />
+
+      {/* Column headers can't carry a sort affordance once the table becomes a card list — this chip strip replaces them below `isDesktop`. */}
+      {!isDesktop && (
+        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border bg-panel px-4 py-1.5" role="group" aria-label="Sort by">
+          <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-text-muted">Sort</span>
+          {COLUMN_META.filter((col) => col.sortable).map((col) => (
+            <button
+              key={col.key}
+              type="button"
+              onClick={(e) => sort.handleHeaderClick(col.key, e.shiftKey)}
+              aria-sort={ariaSortFor(sort.directionFor(col.key))}
+              className={cn(
+                'flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded border px-2 text-xs font-medium transition-colors',
+                sort.directionFor(col.key)
+                  ? 'border-neutral bg-neutral/15 text-neutral'
+                  : 'border-border text-text-secondary hover:text-text-primary',
+              )}
+            >
+              {col.label}
+              <SortIndicator direction={sort.directionFor(col.key)} rank={sort.rankFor(col.key)} />
+            </button>
+          ))}
+        </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-panel px-3 py-1.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-panel px-4 py-1.5">
         <Button size="sm" variant="ghost" onClick={() => setGroupBy((v) => !v)} aria-pressed={groupBy}>
           <Rows3 className="h-3.5 w-3.5" />
           {groupBy ? 'Grouped' : 'Flat list'}
@@ -298,7 +309,7 @@ export function SignalsTable({ store }: SignalsTableProps) {
           {chimeEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
           Chime
         </Button>
-        <span className="mx-1 hidden h-4 w-px bg-border desktop:inline" aria-hidden="true" />
+        <span className="mx-1 hidden h-4 w-px bg-border md:inline" aria-hidden="true" />
         <Button size="sm" variant="ghost" onClick={() => downloadCsv(filteredSorted)}>
           Export CSV
         </Button>
@@ -314,7 +325,7 @@ export function SignalsTable({ store }: SignalsTableProps) {
           {isPaused ? (
             <span className="ml-2 font-medium text-warning">· scanning paused</span>
           ) : (
-            secondsToNextScan !== null && <span className="ml-2 hidden font-mono tabular-nums desktop:inline">· next scan in {secondsToNextScan}s</span>
+            secondsToNextScan !== null && <span className="ml-2 hidden font-mono tabular-nums md:inline">· next scan in {secondsToNextScan}s</span>
           )}
         </span>
       </div>
@@ -327,29 +338,6 @@ export function SignalsTable({ store }: SignalsTableProps) {
             className="h-full bg-neutral transition-all duration-150"
             style={{ width: scanProgress.total > 0 ? `${(scanProgress.done / scanProgress.total) * 100}%` : '0%' }}
           />
-        </div>
-      )}
-
-      {isDesktop && (
-        <div role="row" className="grid border-b border-border bg-panel px-3 text-xs font-medium uppercase tracking-wide text-text-secondary" style={{ gridTemplateColumns: GRID_TEMPLATE }}>
-          {COLUMN_META.map((col) => (
-            <button
-              key={col.key}
-              type="button"
-              role="columnheader"
-              aria-sort={col.sortable ? ariaSortFor(sort.directionFor(col.key)) : undefined}
-              disabled={!col.sortable}
-              onClick={(e) => col.sortable && sort.handleHeaderClick(col.key, e.shiftKey)}
-              className={cn(
-                'flex h-8 items-center gap-1 py-1.5 text-left disabled:cursor-default',
-                col.sortable && 'cursor-pointer hover:text-text-primary',
-                col.align === 'right' && 'justify-end text-right',
-              )}
-            >
-              {col.label}
-              {col.sortable && <SortIndicator direction={sort.directionFor(col.key)} rank={sort.rankFor(col.key)} />}
-            </button>
-          ))}
         </div>
       )}
 
@@ -382,50 +370,81 @@ export function SignalsTable({ store }: SignalsTableProps) {
             }
           />
         ) : (
-          <div ref={parentRef} className="h-full overflow-y-auto" role="rowgroup">
-            <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const item = displayItems[virtualRow.index]
-                if (!item) return null
+          // Header and rows share ONE scroll container (overflow-auto, both
+          // axes) so a horizontal scroll at this width moves them together —
+          // two independent scrollers here would let the header and the
+          // columns beneath it drift out of sync.
+          <div ref={parentRef} className="h-full overflow-auto" role="rowgroup">
+            <div style={{ minWidth: GRID_MIN_WIDTH }}>
+              <div
+                role="row"
+                className="sticky top-0 z-10 grid border-b border-border bg-panel px-4 text-xs font-medium uppercase tracking-wide text-text-secondary"
+                style={{ gridTemplateColumns: GRID_TEMPLATE }}
+              >
+                {COLUMN_META.map((col) => (
+                  <button
+                    key={col.key}
+                    type="button"
+                    role="columnheader"
+                    aria-sort={col.sortable ? ariaSortFor(sort.directionFor(col.key)) : undefined}
+                    disabled={!col.sortable}
+                    onClick={(e) => col.sortable && sort.handleHeaderClick(col.key, e.shiftKey)}
+                    className={cn(
+                      'flex h-8 items-center gap-1 py-1.5 text-left disabled:cursor-default',
+                      col.sortable && 'cursor-pointer hover:text-text-primary',
+                      col.align === 'right' && 'justify-end text-right',
+                    )}
+                  >
+                    {col.label}
+                    {col.sortable && <SortIndicator direction={sort.directionFor(col.key)} rank={sort.rankFor(col.key)} />}
+                  </button>
+                ))}
+              </div>
 
-                if (item.type === 'group') {
+              <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+                {virtualizer.getVirtualItems().map((virtualRow) => {
+                  const item = displayItems[virtualRow.index]
+                  if (!item) return null
+
+                  if (item.type === 'group') {
+                    return (
+                      <GroupHeader
+                        key={`group-${item.signal}`}
+                        virtualRow={virtualRow}
+                        signal={item.signal}
+                        count={item.count}
+                        collapsed={collapsedGroups.has(item.signal)}
+                        onToggle={() =>
+                          setCollapsedGroups((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(item.signal)) next.delete(item.signal)
+                            else next.add(item.signal)
+                            return next
+                          })
+                        }
+                      />
+                    )
+                  }
+
                   return (
-                    <GroupHeader
-                      key={`group-${item.signal}`}
+                    <SignalTableRowView
+                      key={item.row.id}
+                      row={item.row}
+                      store={store}
                       virtualRow={virtualRow}
-                      signal={item.signal}
-                      count={item.count}
-                      collapsed={collapsedGroups.has(item.signal)}
-                      onToggle={() =>
-                        setCollapsedGroups((prev) => {
-                          const next = new Set(prev)
-                          if (next.has(item.signal)) next.delete(item.signal)
-                          else next.add(item.signal)
-                          return next
-                        })
-                      }
+                      isSelected={item.row.id === selectedRowId}
+                      isFresh={freshRowIds.current.has(item.row.id)}
+                      isHoveredUnderlying={hoveredUnderlying === item.row.symbol}
+                      onClick={() => {
+                        store.getState().selectRow(item.row.id)
+                        setDetailRowId(item.row.id)
+                      }}
+                      onContextMenu={(x, y) => setContextMenu({ x, y, rowId: item.row.id })}
+                      onHoverDerived={(hovering) => setHoveredUnderlying(hovering ? (item.row.derivedFrom ?? null) : null)}
                     />
                   )
-                }
-
-                return (
-                  <SignalTableRowView
-                    key={item.row.id}
-                    row={item.row}
-                    store={store}
-                    virtualRow={virtualRow}
-                    isSelected={item.row.id === selectedRowId}
-                    isFresh={freshRowIds.current.has(item.row.id)}
-                    isHoveredUnderlying={hoveredUnderlying === item.row.symbol}
-                    onClick={() => {
-                      store.getState().selectRow(item.row.id)
-                      setDetailRowId(item.row.id)
-                    }}
-                    onContextMenu={(x, y) => setContextMenu({ x, y, rowId: item.row.id })}
-                    onHoverDerived={(hovering) => setHoveredUnderlying(hovering ? (item.row.derivedFrom ?? null) : null)}
-                  />
-                )
-              })}
+                })}
+              </div>
             </div>
           </div>
         )}

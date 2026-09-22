@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Download, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { IconButton } from '../../components/ui/IconButton'
 import { cn } from '../../lib/cn'
 import { formatISTDate, formatISTTime, formatNumber } from '../../lib/formatters'
 import { useEscapeToClose } from '../../lib/useEscapeToClose'
@@ -123,8 +124,9 @@ export function HistoryDrawer({ open, onClose, store }: HistoryDrawerProps) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-surface/70" onClick={onClose} />
-      <div className="relative flex h-full w-full flex-col border-l border-border bg-panel desktop:w-[560px]" role="dialog" aria-modal="true" aria-label="History">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      {/* min(560px, 100%): the fixed width never exceeds the viewport itself right at the sm breakpoint (480px < 560px). */}
+      <div className="relative flex h-full w-full flex-col border-l border-border bg-panel sm:w-[min(560px,100%)]" role="dialog" aria-modal="true" aria-label="History">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-panel px-4 py-3">
           <h2 className="text-sm font-semibold text-text-primary">History</h2>
           <div className="flex items-center gap-2">
             <Button
@@ -143,9 +145,9 @@ export function HistoryDrawer({ open, onClose, store }: HistoryDrawerProps) {
             >
               <Download className="h-3.5 w-3.5" /> Export CSV
             </Button>
-            <button type="button" onClick={onClose} aria-label="Close" className="text-text-secondary hover:text-text-primary">
+            <IconButton aria-label="Close" onClick={onClose}>
               <X className="h-4 w-4" />
-            </button>
+            </IconButton>
           </div>
         </div>
 
@@ -153,11 +155,17 @@ export function HistoryDrawer({ open, onClose, store }: HistoryDrawerProps) {
           Hypothetical, mock data, no slippage or costs — not a backtest.
         </p>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        {/*
+          One scroller, both axes — the table needs a horizontal one of its
+          own on narrow viewports, and the sticky header only sticks
+          correctly relative to a single ancestor scroll container, not two
+          nested ones.
+        */}
+        <div className="min-h-0 flex-1 overflow-auto">
           {rows.length === 0 ? (
             <p className="p-4 text-xs text-text-muted">No signals have fired yet this session.</p>
           ) : (
-            <table className="w-full text-xs">
+            <table className="w-full min-w-[560px] text-xs">
               <thead className="sticky top-0 bg-panel">
                 <tr className="border-b border-border text-left text-text-muted">
                   <th className="px-4 py-1.5 font-normal">Time</th>

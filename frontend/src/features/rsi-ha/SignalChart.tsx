@@ -14,6 +14,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { theme } from '../../app/theme'
+import { CHART_HEIGHT_CLASS } from './chartHeight'
 import { haStreakLength } from '../../strategy/indicators'
 import type { StrategyParams } from '../../strategy/constants'
 import type { AnalyzedCandle, Candle } from '../../types/domain'
@@ -281,7 +282,7 @@ export function SignalChart({ candles, analyzed, params, row, showRawOverlay }: 
 
   return (
     <div className="relative">
-      <div ref={containerRef} style={{ height: 360 }} />
+      <div ref={containerRef} className={CHART_HEIGHT_CLASS} />
       {hover && <ChartTooltip info={hover} />}
     </div>
   )

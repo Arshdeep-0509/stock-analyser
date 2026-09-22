@@ -1,4 +1,7 @@
 import { useEffect, useRef } from 'react'
+import { X } from 'lucide-react'
+import { IconButton } from '../components/ui/IconButton'
+import { useEscapeToClose } from '../lib/useEscapeToClose'
 import { useUiStore } from '../store/uiStore'
 
 interface ShortcutGroup {
@@ -46,25 +49,21 @@ export function ShortcutsOverlay() {
     if (open) closeButtonRef.current?.focus()
   }, [open])
 
+  useEscapeToClose(open, () => useUiStore.getState().setShortcutsOverlayOpen(false))
+
   if (!open) return null
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
       <div className="absolute inset-0 bg-surface/70" onClick={() => useUiStore.getState().setShortcutsOverlayOpen(false)} />
-      <div className="relative flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-lg">
+      <div className="relative flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-lg">
         <div className="flex items-center justify-between border-b border-border-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-text-primary">Keyboard shortcuts</h2>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            aria-label="Close"
-            onClick={() => useUiStore.getState().setShortcutsOverlayOpen(false)}
-            className="text-text-secondary hover:text-text-primary"
-          >
-            ✕
-          </button>
+          <IconButton ref={closeButtonRef} aria-label="Close" onClick={() => useUiStore.getState().setShortcutsOverlayOpen(false)}>
+            <X className="h-4 w-4" />
+          </IconButton>
         </div>
-        <div className="grid gap-4 overflow-y-auto p-4 desktop:grid-cols-2">
+        <div className="grid gap-4 overflow-y-auto p-4 md:grid-cols-2">
           {GROUPS.map((group) => (
             <div key={group.title}>
               <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-text-secondary">{group.title}</h3>

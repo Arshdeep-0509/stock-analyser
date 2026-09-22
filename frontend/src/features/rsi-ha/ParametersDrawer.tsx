@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { RotateCcw, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { IconButton } from '../../components/ui/IconButton'
 import { Input } from '../../components/ui/Input'
 import { RangeSlider } from '../../components/ui/RangeSlider'
 import { Select } from '../../components/ui/Select'
@@ -63,22 +64,18 @@ export function ParametersDrawer({ open, onClose, store }: ParametersDrawerProps
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-surface/70" onClick={onClose} />
-      <div className="relative flex h-full w-full flex-col border-l border-border bg-panel desktop:w-96" role="dialog" aria-modal="true" aria-label="Parameters">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      <div className="relative flex h-full w-full flex-col border-l border-border bg-panel sm:w-96" role="dialog" aria-modal="true" aria-label="Parameters">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-panel px-4 py-3">
           <h2 className="text-sm font-semibold text-text-primary">Parameters</h2>
           <div className="flex items-center gap-2">
             {overridden.size > 0 && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => void store.getState().resetParams()}
-              >
+              <Button size="sm" variant="ghost" onClick={() => void store.getState().resetParams()}>
                 <RotateCcw className="h-3.5 w-3.5" /> Reset to defaults
               </Button>
             )}
-            <button type="button" onClick={onClose} aria-label="Close" className="text-text-secondary hover:text-text-primary">
+            <IconButton aria-label="Close" onClick={onClose}>
               <X className="h-4 w-4" />
-            </button>
+            </IconButton>
           </div>
         </div>
 

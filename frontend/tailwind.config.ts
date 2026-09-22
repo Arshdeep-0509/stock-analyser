@@ -4,13 +4,20 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
+    // A full replace (not `extend`), so these six are the ONLY breakpoints
+    // in the app — defined once here, used everywhere via sm:/md:/lg:/xl:/2xl:
+    // prefixes (Tailwind auto-generates the matching max-sm:/max-md:/...
+    // variants from this same object). "xs" has no prefix of its own: it's
+    // simply the unprefixed/base styles, since Tailwind is mobile-first and
+    // anything below `sm` is already the default with no override.
+    screens: {
+      sm: '480px', // large phone / small tablet portrait
+      md: '768px', // tablet portrait
+      lg: '1024px', // tablet landscape / small laptop
+      xl: '1280px', // desktop
+      '2xl': '1536px', // wide desktop
+    },
     extend: {
-      screens: {
-        // The single breakpoint this app designs around: table <-> cards,
-        // drawer <-> full-screen. Named for what's true ABOVE it (Tailwind
-        // breakpoints are min-width/mobile-first).
-        desktop: '900px',
-      },
       colors: {
         surface: 'rgb(var(--color-surface) / <alpha-value>)',
         panel: 'rgb(var(--color-panel) / <alpha-value>)',

@@ -16,9 +16,12 @@ const variantClasses: Record<ButtonVariant, string> = {
   danger: 'bg-bearish text-white hover:brightness-110 border border-transparent',
 }
 
+// h-10 (40px) below md for tap-target compliance, shrinking to the tighter
+// mouse-appropriate size at md+ — the same "grow the box, not the icon/text"
+// rule as IconButton.
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: 'h-7 px-2 text-xs',
-  md: 'h-8 px-3 text-sm',
+  sm: 'h-10 px-2 text-xs md:h-7',
+  md: 'h-10 px-3 text-sm md:h-8',
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Bell, BellOff, Plus, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { IconButton } from '../../components/ui/IconButton'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Toggle } from '../../components/ui/Toggle'
@@ -58,12 +59,12 @@ export function AlertsDrawer({ open, onClose }: AlertsDrawerProps) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-surface/70" onClick={onClose} />
-      <div className="relative flex h-full w-full flex-col border-l border-border bg-panel desktop:w-96" role="dialog" aria-modal="true" aria-label="Alerts">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      <div className="relative flex h-full w-full flex-col border-l border-border bg-panel sm:w-96" role="dialog" aria-modal="true" aria-label="Alerts">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-panel px-4 py-3">
           <h2 className="text-sm font-semibold text-text-primary">
             Alerts {unreadCount > 0 && <span className="ml-1 text-xs text-bearish">({unreadCount} unread)</span>}
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             {notifications.length > 0 && (
               <>
                 <Button size="sm" variant="ghost" onClick={() => useAlertStore.getState().markAllRead()}>
@@ -74,9 +75,9 @@ export function AlertsDrawer({ open, onClose }: AlertsDrawerProps) {
                 </Button>
               </>
             )}
-            <button type="button" onClick={onClose} aria-label="Close" className="text-text-secondary hover:text-text-primary">
+            <IconButton aria-label="Close" onClick={onClose}>
               <X className="h-4 w-4" />
-            </button>
+            </IconButton>
           </div>
         </div>
 
@@ -132,13 +133,17 @@ export function AlertsDrawer({ open, onClose }: AlertsDrawerProps) {
                 .map((rule) => (
                   <li key={rule.id} className="flex items-center justify-between text-xs">
                     <span className={cn(rule.enabled ? 'text-text-primary' : 'text-text-muted line-through')}>{ruleLabel(rule)}</span>
-                    <span className="flex items-center gap-1">
-                      <button type="button" onClick={() => useAlertStore.getState().toggleRule(rule.id)} className="text-text-muted hover:text-text-primary">
+                    <span className="flex items-center">
+                      <IconButton aria-label={rule.enabled ? 'Disable rule' : 'Enable rule'} onClick={() => useAlertStore.getState().toggleRule(rule.id)}>
                         {rule.enabled ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
-                      </button>
-                      <button type="button" onClick={() => useAlertStore.getState().removeRule(rule.id)} className="text-text-muted hover:text-bearish">
+                      </IconButton>
+                      <IconButton
+                        aria-label="Remove rule"
+                        onClick={() => useAlertStore.getState().removeRule(rule.id)}
+                        className="hover:text-bearish"
+                      >
                         <Trash2 className="h-3 w-3" />
-                      </button>
+                      </IconButton>
                     </span>
                   </li>
                 ))}

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { Keyboard, Moon, Sun, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { IconButton } from '../../components/ui/IconButton'
 import { Toggle } from '../../components/ui/Toggle'
 import { useEscapeToClose } from '../../lib/useEscapeToClose'
 import type { MockMarketDataSource } from '../../data/mock'
@@ -28,12 +29,12 @@ export function SettingsDrawer({ open, onClose, dataSource }: SettingsDrawerProp
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label="Settings">
       <div className="absolute inset-0 bg-surface/70" onClick={onClose} />
-      <div className="relative flex h-full w-full flex-col border-l border-border bg-panel desktop:w-96">
-        <div className="flex h-topbar shrink-0 items-center justify-between border-b border-border-hairline px-4">
+      <div className="relative flex h-full w-full flex-col border-l border-border bg-panel sm:w-96">
+        <div className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between border-b border-border-hairline bg-panel px-4">
           <h2 className="text-sm font-semibold text-text-primary">Settings</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-text-secondary hover:text-text-primary">
+          <IconButton aria-label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
-          </button>
+          </IconButton>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronUp, Copy, Download, GripVertical, Plus, Search, Trash2, Upload, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { IconButton } from '../../components/ui/IconButton'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { cn } from '../../lib/cn'
@@ -105,16 +106,16 @@ export function WatchlistsDrawer({ open, onClose, dataSource, store }: Watchlist
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-surface/70" onClick={onClose} />
       <div
-        className="relative flex h-full w-full flex-col border-l border-border bg-panel desktop:w-[420px]"
+        className="relative flex h-full w-full flex-col border-l border-border bg-panel sm:w-[min(420px,100%)]"
         role="dialog"
         aria-modal="true"
         aria-label="Watchlists"
       >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-panel px-4 py-3">
           <h2 className="text-sm font-semibold text-text-primary">Watchlists</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-text-secondary hover:text-text-primary">
+          <IconButton aria-label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
-          </button>
+          </IconButton>
         </div>
 
         <div className="flex items-center gap-2 border-b border-border-hairline px-4 py-2">
@@ -162,10 +163,11 @@ export function WatchlistsDrawer({ open, onClose, dataSource, store }: Watchlist
 
         {active ? (
           <>
-            <div className="flex items-center gap-1.5 border-b border-border-hairline px-4 py-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border-hairline px-4 py-2">
               <Button
                 size="sm"
                 variant="ghost"
+                className="shrink-0"
                 onClick={() => {
                   const name = window.prompt('Rename watchlist', active.name)
                   if (name) useWatchlistStore.getState().renameWatchlist(active.id, name)
@@ -173,12 +175,13 @@ export function WatchlistsDrawer({ open, onClose, dataSource, store }: Watchlist
               >
                 Rename
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => useWatchlistStore.getState().duplicateWatchlist(active.id)}>
+              <Button size="sm" variant="ghost" className="shrink-0" onClick={() => useWatchlistStore.getState().duplicateWatchlist(active.id)}>
                 <Copy className="h-3.5 w-3.5" /> Duplicate
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
+                className="shrink-0"
                 onClick={() => {
                   const json = useWatchlistStore.getState().exportJson(active.id)
                   if (json) void navigator.clipboard.writeText(json)
@@ -186,7 +189,7 @@ export function WatchlistsDrawer({ open, onClose, dataSource, store }: Watchlist
               >
                 <Download className="h-3.5 w-3.5" /> Export
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => fileInputRef.current?.click()}>
+              <Button size="sm" variant="ghost" className="shrink-0" onClick={() => fileInputRef.current?.click()}>
                 <Upload className="h-3.5 w-3.5" /> Import
               </Button>
               <input
@@ -203,6 +206,7 @@ export function WatchlistsDrawer({ open, onClose, dataSource, store }: Watchlist
               <Button
                 size="sm"
                 variant="ghost"
+                className="shrink-0"
                 onClick={() => {
                   if (window.confirm(`Delete "${active.name}"?`)) useWatchlistStore.getState().deleteWatchlist(active.id)
                 }}
@@ -278,29 +282,26 @@ export function WatchlistsDrawer({ open, onClose, dataSource, store }: Watchlist
                     onDrop={() => handleDrop(index)}
                     className={cn('flex items-center gap-2 border-b border-border-hairline px-4 py-2 text-sm', dragIndex === index && 'opacity-50')}
                   >
-                    <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-text-muted" aria-hidden="true" />
-                    <span className="flex shrink-0 flex-col">
-                      <button
-                        type="button"
+                    <GripVertical className="hidden h-3.5 w-3.5 shrink-0 cursor-grab text-text-muted md:block" aria-hidden="true" />
+                    {/* Side by side, not stacked — each needs its own 40x40 tap target below md, which a vertical stack can't give both without doubling the row height. */}
+                    <span className="flex shrink-0 items-center">
+                      <IconButton
                         aria-label={`Move ${item.symbol} up`}
                         disabled={index === 0}
                         onClick={() => useWatchlistStore.getState().reorderItem(active.id, index, index - 1)}
-                        className="text-text-muted hover:text-text-primary disabled:opacity-30"
                       >
                         <ChevronUp className="h-3 w-3" />
-                      </button>
-                      <button
-                        type="button"
+                      </IconButton>
+                      <IconButton
                         aria-label={`Move ${item.symbol} down`}
                         disabled={index === active.items.length - 1}
                         onClick={() => useWatchlistStore.getState().reorderItem(active.id, index, index + 1)}
-                        className="text-text-muted hover:text-text-primary disabled:opacity-30"
                       >
                         <ChevronDown className="h-3 w-3" />
-                      </button>
+                      </IconButton>
                     </span>
-                    <button
-                      type="button"
+                    <IconButton
+                      aria-label={selectedTokens.has(item.token) ? `Deselect ${item.symbol}` : `Select ${item.symbol}`}
                       onClick={() =>
                         setSelectedTokens((prev) => {
                           const next = new Set(prev)
@@ -309,23 +310,25 @@ export function WatchlistsDrawer({ open, onClose, dataSource, store }: Watchlist
                           return next
                         })
                       }
-                      className={cn(
-                        'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                        selectedTokens.has(item.token) ? 'border-neutral bg-neutral text-white' : 'border-border',
-                      )}
                     >
-                      {selectedTokens.has(item.token) && <Check className="h-3 w-3" />}
-                    </button>
+                      <span
+                        className={cn(
+                          'flex h-4 w-4 items-center justify-center rounded border',
+                          selectedTokens.has(item.token) ? 'border-neutral bg-neutral text-white' : 'border-border',
+                        )}
+                      >
+                        {selectedTokens.has(item.token) && <Check className="h-3 w-3" />}
+                      </span>
+                    </IconButton>
                     <span className="flex-1 truncate text-text-primary">{item.symbol}</span>
-                    <span className="text-xs text-text-muted">{item.exchange}</span>
-                    <button
-                      type="button"
+                    <span className="hidden text-xs text-text-muted sm:inline">{item.exchange}</span>
+                    <IconButton
                       aria-label={`Remove ${item.symbol}`}
                       onClick={() => useWatchlistStore.getState().removeItem(active.id, item.token)}
                       className="text-text-muted hover:text-bearish"
                     >
                       <X className="h-3.5 w-3.5" />
-                    </button>
+                    </IconButton>
                   </div>
                 ))
               )}

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Button } from '../components/ui/Button'
+import { useEscapeToClose } from '../lib/useEscapeToClose'
 import { useUiStore } from '../store/uiStore'
 
 interface TourStep {
@@ -34,6 +35,8 @@ export function FirstRunTour() {
   useEffect(() => {
     if (step !== null) headingRef.current?.focus()
   }, [step])
+
+  useEscapeToClose(step !== null, dismiss)
 
   if (step === null) return null
 
