@@ -1,4 +1,4 @@
-export { MockMarketDataSource, DEFAULT_SEED, type MockDevState } from './MockMarketDataSource'
+export { MockMarketDataSource, DEFAULT_SEED, DEFAULT_FAILURE_RATE, type MockDevState } from './MockMarketDataSource'
 export { MockDevtoolsPanel } from './MockDevtoolsPanel'
 export { MockClock, type ClockMode, type ClockSpeed } from './clock'
 export { generateUniverse, type GeneratedUniverse, type UniverseSymbolResult } from './generateUniverse'

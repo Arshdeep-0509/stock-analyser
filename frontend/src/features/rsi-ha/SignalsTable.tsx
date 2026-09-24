@@ -8,6 +8,7 @@ import { formatISTTime } from '../../lib/formatters'
 import { useMediaQuery } from '../../lib/useMediaQuery'
 import type { ScreenerStore } from '../../store/screenerStore'
 import type { ScreenerRow } from '../../store/types'
+import type { StrategyParams } from '../../strategy/constants'
 import type { SignalKind } from '../../types/domain'
 import { playChime } from './chime'
 import { ChangePercentCell, ExchangeChip, HaStreakSparkline, InstrumentTypeChip, LevelCell, LtpCell, PriceCell, RsiCell, SignalBadge, TimeCell } from './cells'
@@ -85,6 +86,7 @@ export function SignalsTable({ store }: SignalsTableProps) {
   const showNseEquityRows = store((s) => s.showNseEquityRows)
   const selectedRowId = store((s) => s.selectedRowId)
   const isPaused = store((s) => s.isPaused)
+  const params = store((s) => s.params)
 
   const filters = useTableFilters()
   const sort = useSort([{ key: 'time', direction: 'desc' }])
@@ -95,7 +97,8 @@ export function SignalsTable({ store }: SignalsTableProps) {
   const [detailRowId, setDetailRowId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [hoveredUnderlying, setHoveredUnderlying] = useState<string | null>(null)
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  // Simulated market time (the clock nextScanAt is expressed in) — never the wall clock.
+  const [now, setNow] = useState(() => store.getState().clockNow())
   const [announcement, setAnnouncement] = useState('')
 
   // The one threshold in the app that isn't a named breakpoint — an
@@ -103,8 +106,8 @@ export function SignalsTable({ store }: SignalsTableProps) {
   // between md (768) and lg (1024). See useMediaQuery's own comment.
   const isDesktop = useMediaQuery('(min-width: 900px)')
   const parentRef = useRef<HTMLDivElement>(null)
-  const seenRowIds = useRef<Set<string>>(new Set())
   const freshRowIds = useRef<Set<string>>(new Set())
+  const freshIds = store((s) => s.freshIds)
 
   // Opens the drawer when something OUTSIDE this table (the alerts inbox,
   // history view) requests it — the nonce means even a repeat request for
@@ -116,38 +119,34 @@ export function SignalsTable({ store }: SignalsTableProps) {
   }, [detailOpenRequest])
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000)
+    const id = window.setInterval(() => setNow(store.getState().clockNow()), 1000)
     return () => window.clearInterval(id)
-  }, [])
+  }, [store])
 
-  // New-row detection for the slide-in accent + chime. This runs once per
-  // `rows` change (scan completion / dedupe merge), never per tick.
+  // New-row accent + chime + aria-live announcement. Driven by the store's
+  // `freshIds` — genuinely new rows from a scheduled scan — never by diffing
+  // `rows` here: that treated the first scan, a parameter what-if and every
+  // replay seek as "all new", and read the whole table out at startup.
+  // One announcement per scan (not per row), capped at three names.
   useEffect(() => {
-    const currentIds = new Set(rows.map((r) => r.id))
-    const newlySeen: ScreenerRow[] = []
-    for (const row of rows) {
-      if (!seenRowIds.current.has(row.id)) {
-        freshRowIds.current.add(row.id)
-        newlySeen.push(row)
-      }
-    }
-    seenRowIds.current = currentIds
+    if (freshIds.length === 0) return
+    const freshSet = new Set(freshIds)
+    freshRowIds.current = freshSet
+    const newlySeen = store.getState().visibleRows.filter((r) => freshSet.has(r.id))
     if (newlySeen.length > 0) {
       if (chimeEnabled) playChime()
-      // aria-live announcement — capped so a big batch (e.g. right after
-      // "Reset to defaults") doesn't read out dozens of rows at once.
       const announced = newlySeen.slice(0, 3)
-      const text = announced.map((r) => `${r.signal} signal, ${r.symbol}, RSI ${r.rsi.toFixed(1)}`).join('. ')
+      const text = announced.map((r) => `${r.signal} signal, ${r.symbol}, RSI ${Number.isNaN(r.rsi) ? 'n/a' : r.rsi.toFixed(1)}`).join('. ')
       setAnnouncement(newlySeen.length > announced.length ? `${text}. And ${newlySeen.length - announced.length} more.` : text)
     }
     const timer = window.setTimeout(() => {
-      freshRowIds.current.clear()
+      freshRowIds.current = new Set()
     }, 1600)
     return () => window.clearTimeout(timer)
-    // Intentionally keyed on `rows` alone — chimeEnabled is still read at
-    // its current value whenever this fires, since React always runs the
-    // latest render's effect body, not the one from when deps last changed.
-  }, [rows, chimeEnabled])
+    // Keyed on freshIds only: chimeEnabled is read at its current value when
+    // this fires; toggling it must not replay the last announcement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freshIds])
 
   // LTP/Change% sort against a SNAPSHOT of liveLtp taken now (store.getState(),
   // not a subscription) — subscribing the whole table to every tick would
@@ -347,6 +346,7 @@ export function SignalsTable({ store }: SignalsTableProps) {
         ) : filteredSorted.length === 0 ? (
           <ZeroSignalsEmptyState
             universeSize={universe.length}
+            params={params}
             lastScanAt={store.getState().lastScanAt}
             secondsToNextScan={secondsToNextScan}
             hasFilters={filters.activeFilterCount > 0}
@@ -506,6 +506,7 @@ function SignalTableRowView({ row, store, virtualRow, isSelected, isFresh, isHov
   // re-renders this row, which is what keeps 500 rows at 60fps under a
   // live tick stream.
   const ltp = store((s) => (row.token ? s.liveLtp.get(row.token) : undefined))
+  const params = store((s) => s.params)
   const instrumentType = getInstrumentType(row)
   const derived = isDerivedRow(row)
   const change = ltp === undefined || row.price === 0 ? null : ((ltp - row.price) / row.price) * 100
@@ -559,7 +560,7 @@ function SignalTableRowView({ row, store, virtualRow, isSelected, isFresh, isHov
         <ChangePercentCell value={change} />
       </span>
       <span role="gridcell">
-        <RsiCell rsi={row.rsi} inherited={derived ? row.derivedFrom : undefined} />
+        <RsiCell rsi={row.rsi} inherited={derived ? row.derivedFrom : undefined} bands={params} />
       </span>
       <span role="gridcell">
         <HaStreakSparkline colors={row.haStreak} />
@@ -649,12 +650,14 @@ function SkeletonTable() {
 
 function ZeroSignalsEmptyState({
   universeSize,
+  params,
   lastScanAt,
   secondsToNextScan,
   hasFilters,
   onClearFilters,
 }: {
   universeSize: number
+  params: StrategyParams
   lastScanAt: number | null
   secondsToNextScan: number | null
   hasFilters: boolean
@@ -676,8 +679,9 @@ function ZeroSignalsEmptyState({
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
       <p className="max-w-md text-sm text-text-primary">
-        Scanned {universeSize} instruments at {scanTimeLabel}. No instrument currently satisfies RSI 60–65 with a 2nd green HA
-        candle, or RSI 35–40 with a 2nd red one.
+        {/* The bands come from the params actually running — after a Parameters edit, a hardcoded 60–65 / 35–40 would describe a strategy that isn't. */}
+        Scanned {universeSize} instruments at {scanTimeLabel}. No instrument currently satisfies RSI {params.rsiBuyLow}–{params.rsiBuyHigh} with a
+        2nd green HA candle, or RSI {params.rsiSellLow}–{params.rsiSellHigh} with a 2nd red one.
       </p>
       {secondsToNextScan !== null && (
         <p className="font-mono text-xs tabular-nums text-text-secondary">Next scan in {secondsToNextScan}s</p>

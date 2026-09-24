@@ -8,6 +8,8 @@ const THEME_KEY = 'rsi-ha:theme'
 const THEME_VERSION = 1
 const TOUR_KEY = 'rsi-ha:tour-dismissed'
 const TOUR_VERSION = 1
+/** The last valid index into FirstRunTour's STEPS array (2 steps: 0, 1) — see nextTourStep(). */
+const TOUR_LAST_STEP = 1
 
 function loadTheme(): Theme {
   return loadVersioned<Theme>(THEME_KEY, THEME_VERSION, () => null) ?? 'dark'
@@ -70,7 +72,11 @@ export const useUiStore = create<UiState>()((set, get) => {
     nextTourStep() {
       const step = get().tourStep
       if (step === null) return
-      if (step >= 2) {
+      // Must track FirstRunTour's own STEPS.length - 1: on the last step this
+      // dismisses (and persists tourDismissed) instead of advancing past the
+      // end of the array, where the tour would silently vanish without ever
+      // marking itself seen, and reappear on the next visit.
+      if (step >= TOUR_LAST_STEP) {
         get().dismissTour()
         return
       }

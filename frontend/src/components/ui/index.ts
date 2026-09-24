@@ -12,3 +12,7 @@ export { StatusDot, type StatusDotProps, type ConnectionStatus } from './StatusD
 export { RangeSlider, type RangeSliderProps } from './RangeSlider'
 export { IconButton, type IconButtonProps } from './IconButton'
 export { BottomSheet, type BottomSheetProps } from './BottomSheet'
+export { MetricInfo } from './MetricInfo'
+export { StrengthInfo, StrengthCell, type StrengthCellProps } from './StrengthCell'
+export { StarMarker, type StarMarkerProps } from './StarMarker'
+export { PanelErrorBoundary, type PanelErrorBoundaryProps } from './PanelErrorBoundary'

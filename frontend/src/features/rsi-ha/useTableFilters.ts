@@ -25,12 +25,25 @@ const DEFAULT_FILTERS: TableFilters = {
 
 const SEARCH_DEBOUNCE_MS = 250
 
+/**
+ * Links written before the double-encoding fix carry `sig=CE%2520Buy`, which
+ * URLSearchParams decodes once to "CE%20Buy": decode the leftover so old links
+ * still restore. Malformed escapes pass through as-is (and then fail validation).
+ */
+function decodeLegacy(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 function parseList<T extends string>(raw: string | null, valid: readonly T[]): T[] {
   if (!raw) return []
   const set = new Set(valid as readonly string[])
   return raw
     .split(',')
-    .map((v) => decodeURIComponent(v))
+    .map(decodeLegacy)
     .filter((v): v is T => set.has(v))
 }
 
@@ -60,7 +73,8 @@ function paramsFromFilters(filters: TableFilters, previous: URLSearchParams): UR
   }
 
   setOrDelete('q', filters.search || null)
-  setOrDelete('sig', filters.signals.length ? filters.signals.map(encodeURIComponent).join(',') : null)
+  // Plain values: URLSearchParams does the encoding (encoding here too wrote `CE%2520Buy`).
+  setOrDelete('sig', filters.signals.length ? filters.signals.join(',') : null)
   setOrDelete('exch', filters.exchanges.length ? filters.exchanges.join(',') : null)
   setOrDelete('itype', filters.instrumentTypes.length ? filters.instrumentTypes.join(',') : null)
   setOrDelete('rsiMin', filters.rsiMin !== DEFAULT_FILTERS.rsiMin ? String(filters.rsiMin) : null)
@@ -164,13 +178,17 @@ export function applyFilters<T extends { symbol: string; signal: SignalKind; exc
   getInstrumentType: (row: T) => InstrumentType,
 ): T[] {
   const needle = filters.search.trim().toUpperCase()
+  // An RSI range narrower than the full 0-100 is a real constraint, and a row
+  // with no RSI yet (NaN) cannot satisfy it — so it's excluded. With the
+  // range at its default, NaN rows stay visible like any other.
+  const rsiRangeActive = filters.rsiMin > DEFAULT_FILTERS.rsiMin || filters.rsiMax < DEFAULT_FILTERS.rsiMax
 
   return rows.filter((row) => {
     if (needle && !fuzzyMatch(needle, row.symbol.toUpperCase())) return false
     if (filters.signals.length && !filters.signals.includes(row.signal)) return false
     if (filters.exchanges.length && !filters.exchanges.includes(row.exchange)) return false
     if (filters.instrumentTypes.length && !filters.instrumentTypes.includes(getInstrumentType(row))) return false
-    if (!Number.isNaN(row.rsi) && (row.rsi < filters.rsiMin || row.rsi > filters.rsiMax)) return false
+    if (rsiRangeActive && (Number.isNaN(row.rsi) || row.rsi < filters.rsiMin || row.rsi > filters.rsiMax)) return false
     if (row.price < filters.minPrice) return false
     return true
   })

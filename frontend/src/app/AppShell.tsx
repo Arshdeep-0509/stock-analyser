@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import { PanelErrorBoundary } from '../components/ui/PanelErrorBoundary'
 import { MockDevtoolsPanel } from '../data/mock'
-import { ReplayTransportBar } from '../features/rsi-ha/ReplayTransportBar'
 import { ScanPerfReadout } from '../features/rsi-ha/ScanPerfReadout'
 import { ToastStack } from '../features/rsi-ha/ToastStack'
 import { useUiStore } from '../store/uiStore'
@@ -33,8 +32,8 @@ export function AppShell() {
   return (
     // dvh, not vh: on mobile, browser chrome (the address bar) shows and
     // hides as the user scrolls, and vh doesn't account for that — it would
-    // clip the status bar/replay bar under the chrome instead of resizing
-    // around it the way dvh does.
+    // clip the status bar under the chrome instead of resizing around it the
+    // way dvh does.
     <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-surface">
       <TopBar />
       <MobileNavChips />
@@ -46,9 +45,6 @@ export function AppShell() {
           </PanelErrorBoundary>
         </main>
       </div>
-      <PanelErrorBoundary panelName="Replay controls" diagnostics={() => ({ seed: dataSource.getDevState().seed })}>
-        <ReplayTransportBar dataSource={dataSource} store={useScreenerStore} />
-      </PanelErrorBoundary>
       <StatusBar />
       <footer role="contentinfo" className="border-t border-border bg-surface px-4 py-1 text-center text-[10px] text-text-muted">
         Mock market data generated locally. No broker connection. Not investment advice.

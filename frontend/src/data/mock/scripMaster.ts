@@ -4,7 +4,7 @@ import { deriveSeed, mulberry32, randomFloat, shuffle } from './rng'
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
 
-function formatExpiry(year: number, month0: number, day: number): string {
+export function formatExpiry(year: number, month0: number, day: number): string {
   const abbr = MONTH_ABBR[month0]
   return `${String(day).padStart(2, '0')}-${abbr}-${year}`
 }
@@ -20,7 +20,7 @@ function addMonths(year: number, month0: number, delta: number): { year: number;
   return { year: Math.floor(total / 12), month0: ((total % 12) + 12) % 12 }
 }
 
-function lastThursday(year: number, month0: number): { year: number; month0: number; day: number } {
+export function lastThursday(year: number, month0: number): { year: number; month0: number; day: number } {
   const daysInMonth = new Date(Date.UTC(year, month0 + 1, 0)).getUTCDate()
   let day = daysInMonth
   while (new Date(Date.UTC(year, month0, day)).getUTCDay() !== 4) {

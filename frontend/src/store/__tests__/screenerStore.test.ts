@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MarketDataSource, ConnectionState } from '../../data/MarketDataSource'
+import type { MarketDataSource, ConnectionState, IndexQuote, IndexQuoteKey } from '../../data/MarketDataSource'
 import type { ScripRow, SearchResponse } from '../../types/api'
-import type { Candle, Exchange, MarketTick } from '../../types/domain'
+import type { Candle, Exchange, Instrument, MarketTick } from '../../types/domain'
 import { createScreenerStore, type ScreenerStore } from '../screenerStore'
 import buyCandlesFixture from '../../features/rsi-ha/__tests__/fixtures/buy-candles.json'
 
@@ -45,6 +45,14 @@ class FakeDataSource implements MarketDataSource {
 
   getConnectionState(): ConnectionState {
     return this.connectionState
+  }
+
+  async fetchIndexQuotes(keys: IndexQuoteKey[]): Promise<IndexQuote[]> {
+    return keys.map((key) => ({ key, label: key, last: 0, prevClose: 0, changePct: 0, time: 0 }))
+  }
+
+  async fetchDailyBars(_instrument: Pick<Instrument, 'token' | 'exchange'>, _days: number): Promise<Candle[]> {
+    return []
   }
 
   emitTick(token: string, ltp: number, time: number, exchange: Exchange = 'NSE'): void {

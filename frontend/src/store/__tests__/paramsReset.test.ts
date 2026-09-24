@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { ConnectionState, MarketDataSource } from '../../data/MarketDataSource'
+import type { ConnectionState, IndexQuote, IndexQuoteKey, MarketDataSource } from '../../data/MarketDataSource'
 import type { ScripRow, SearchResponse } from '../../types/api'
-import type { Candle } from '../../types/domain'
+import type { Candle, Instrument } from '../../types/domain'
 import { DEFAULT_PARAMS } from '../../strategy/constants'
 import buyCandlesFixture from '../../features/rsi-ha/__tests__/fixtures/buy-candles.json'
 import { createScreenerStore, type ScreenerStore } from '../screenerStore'
@@ -38,6 +38,12 @@ class FakeDataSource implements MarketDataSource {
   }
   getConnectionState(): ConnectionState {
     return 'connected'
+  }
+  async fetchIndexQuotes(keys: IndexQuoteKey[]): Promise<IndexQuote[]> {
+    return keys.map((key) => ({ key, label: key, last: 0, prevClose: 0, changePct: 0, time: 0 }))
+  }
+  async fetchDailyBars(_instrument: Pick<Instrument, 'token' | 'exchange'>, _days: number): Promise<Candle[]> {
+    return []
   }
 }
 

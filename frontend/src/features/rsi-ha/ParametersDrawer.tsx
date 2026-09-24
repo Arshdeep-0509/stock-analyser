@@ -20,15 +20,22 @@ export interface ParametersDrawerProps {
 const DEBOUNCE_MS = 400
 const INTERVAL_OPTIONS = [1, 3, 5, 15, 30, 60] as const
 
-function Field({ label, overridden, children }: { label: string; overridden: boolean; children: ReactNode }) {
+/**
+ * A labelled setting. Single-control fields render a real <label> around the
+ * control, so the input/select gets its accessible name from the visible text
+ * (axe: label / select-name). The two-handle band sliders pass `group`: their
+ * inputs carry their own aria-labels, and one <label> can't name two controls.
+ */
+function Field({ label, overridden, group = false, children }: { label: string; overridden: boolean; group?: boolean; children: ReactNode }) {
+  const Wrapper = group ? 'div' : 'label'
   return (
-    <div className="py-2.5">
-      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-text-secondary">
+    <Wrapper className="block py-2.5">
+      <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-text-secondary">
         {label}
         {overridden && <span className="h-1.5 w-1.5 rounded-full bg-warning" title="Differs from the reference strategy default" />}
-      </div>
+      </span>
       {children}
-    </div>
+    </Wrapper>
   )
 }
 
@@ -107,20 +114,22 @@ export function ParametersDrawer({ open, onClose, store }: ParametersDrawerProps
             />
           </Field>
 
-          <Field label={`BUY band ${draft.rsiBuyLow}–${draft.rsiBuyHigh}`} overridden={overridden.has('rsiBuyLow') || overridden.has('rsiBuyHigh')}>
+          <Field group label={`BUY band ${draft.rsiBuyLow}–${draft.rsiBuyHigh}`} overridden={overridden.has('rsiBuyLow') || overridden.has('rsiBuyHigh')}>
             <RangeSlider
               min={0}
               max={100}
+              label="BUY band RSI"
               valueMin={draft.rsiBuyLow}
               valueMax={draft.rsiBuyHigh}
               onChange={(rsiBuyLow, rsiBuyHigh) => setDraft({ ...draft, rsiBuyLow, rsiBuyHigh })}
             />
           </Field>
 
-          <Field label={`SELL band ${draft.rsiSellLow}–${draft.rsiSellHigh}`} overridden={overridden.has('rsiSellLow') || overridden.has('rsiSellHigh')}>
+          <Field group label={`SELL band ${draft.rsiSellLow}–${draft.rsiSellHigh}`} overridden={overridden.has('rsiSellLow') || overridden.has('rsiSellHigh')}>
             <RangeSlider
               min={0}
               max={100}
+              label="SELL band RSI"
               valueMin={draft.rsiSellLow}
               valueMax={draft.rsiSellHigh}
               onChange={(rsiSellLow, rsiSellHigh) => setDraft({ ...draft, rsiSellLow, rsiSellHigh })}

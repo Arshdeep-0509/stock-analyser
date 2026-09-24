@@ -15,7 +15,9 @@ const istTimeFormatter = new Intl.DateTimeFormat('en-IN', {
   hour: '2-digit',
   minute: '2-digit',
   second: '2-digit',
-  hour12: false,
+  // hourCycle, not hour12: false — for en-IN, hour12: false resolves to the
+  // h24 cycle and renders midnight as "24:05:00".
+  hourCycle: 'h23',
 })
 
 const istDateFormatter = new Intl.DateTimeFormat('en-IN', {

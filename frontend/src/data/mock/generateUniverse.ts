@@ -1,3 +1,4 @@
+import { expiryFilterToday } from '../../lib/marketSession'
 import type { ScripRow } from '../../types/api'
 import type { AnalyzedCandle } from '../../types/domain'
 import { analyzeCandles } from '../../strategy/analyzeCandles'
@@ -9,9 +10,10 @@ import { CandleEngine } from './candleEngine'
 import { deriveSeed } from './rng'
 import { generateScripMaster, type ScripMasterResult } from './scripMaster'
 
-const MIN_SIGNALS = 8
-const MAX_SIGNALS = 60
-const MAX_ATTEMPTS = 20
+/** The tuner's stated target: distinct symbols with a signal or breakout on the final bar, and its retry budget. */
+export const MIN_SIGNALS = 8
+export const MAX_SIGNALS = 60
+export const MAX_ATTEMPTS = 20
 const DAYS_BACK = 5
 
 export interface UniverseSymbolResult {
@@ -82,7 +84,8 @@ export function generateUniverse(
   const priceByToken = closePriceByToken(scripMaster.rows)
 
   const equityUniverse = loadNseEquityUniverse(scripMaster.rows, params)
-  const futuresUniverse = loadFnoFuturesUniverse(scripMaster.rows, params, referenceNow)
+  // Same "today" the app passes (see expiryFilterToday) so the tuner scans the universe the app will actually show.
+  const futuresUniverse = loadFnoFuturesUniverse(scripMaster.rows, params, expiryFilterToday(referenceNow))
   const scanUniverse = [...equityUniverse, ...futuresUniverse]
 
   let attempt = 0

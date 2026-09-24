@@ -9,10 +9,13 @@ import { DEFAULT_PARAMS, parseIntervalMinutes, type StrategyParams } from '../st
 import { selectVisibleRows } from '../strategy/signals'
 import { loadFnoAtmOptions, loadFnoFuturesUniverse, loadNseEquityUniverse, type AtmMap, type UniverseEntry } from '../strategy/universe'
 import { computeUniverseStats, type UniverseStats } from '../strategy/universeStats'
+import { expiryFilterToday } from '../lib/marketSession'
 import { loadVersioned, removeVersioned, saveVersioned } from '../lib/persistence'
+import type { ScripRow } from '../types/api'
 import type { Candle, Exchange, MarketTick } from '../types/domain'
 import { useAlertStore } from './alertStore'
 import { mergeScanRows } from './mergeScanRows'
+import { usePauseStore } from './pauseStore'
 import type { ScanError, ScanProgress, ScanState, ScreenerRow, UniverseMode } from './types'
 
 enableMapSet()
@@ -43,6 +46,8 @@ export interface ScreenerStoreDeps {
 }
 
 export interface ScreenerState {
+  /** The raw scrip master rows fetched by loadUniverse(), cached here so src/store/intradayStore.ts can reuse them (via a cross-store check, see IntradayStoreDeps.getCachedScripRows) instead of paying loadScripMaster()'s simulated network latency a second time when the user switches tabs. Empty until the first loadUniverse() completes. */
+  scripRows: ScripRow[]
   universe: UniverseEntry[]
   /** How many instruments the current mode/watchlist would include before vs. after the ₹ minPrice filter — for the "Scanning X of Y" display. */
   universeStats: UniverseStats
@@ -67,6 +72,21 @@ export interface ScreenerState {
   lastScanAt: number | null
   nextScanAt: number | null
   history: ScreenerRow[]
+  /**
+   * Ids of rows that are genuinely NEW since the previous scheduled scan —
+   * the one source of "this is news" for alerts, the new-row accent, the
+   * chime and the aria-live announcement. Always empty after the FIRST scan
+   * (that's the starting state, not news) and after an immediateReplace
+   * rescan (a parameter what-if or a replay seek replaces every row, and
+   * none of that is news either).
+   */
+  freshIds: string[]
+  /**
+   * The store's injected clock (epoch seconds) — the SIMULATED market time the
+   * scans run on. Anything that counts down to nextScanAt must read this, never
+   * Date.now(): the two only agree while the mock clock runs live at 1x.
+   */
+  clockNow: () => number
   selectedRowId: string | null
   /**
    * Set by anything outside SignalsTable (the alerts inbox, history view)
@@ -76,6 +96,7 @@ export interface ScreenerState {
    * nav also touches without opening anything.
    */
   detailOpenRequest: { rowId: string; nonce: number } | null
+  /** Mirrors src/store/pauseStore.ts's usePauseStore — kept in this store's own state too so existing `store((s) => s.isPaused)` selectors keep working, but usePauseStore is the source of truth (see start()'s subscription). */
   isPaused: boolean
   connectionState: ConnectionState
 
@@ -120,12 +141,14 @@ async function buildUniverse(
   params: StrategyParams,
   now: number,
   watchlistTokens: ReadonlySet<string>,
-): Promise<{ universe: UniverseEntry[]; atmMap: AtmMap; stats: UniverseStats }> {
+): Promise<{ universe: UniverseEntry[]; atmMap: AtmMap; stats: UniverseStats; scripRows: ScripRow[] }> {
   const scripRows = await dataSource.loadScripMaster()
-  const atmMap = loadFnoAtmOptions(scripRows, params, now)
+  // PARITY: the loaders compare expiries against TODAY (Timestamp.now().normalize()), not the raw clock — see expiryFilterToday().
+  const today = expiryFilterToday(now)
+  const atmMap = loadFnoAtmOptions(scripRows, params, today)
 
   const equity = loadNseEquityUniverse(scripRows, params)
-  const futures = loadFnoFuturesUniverse(scripRows, params, now)
+  const futures = loadFnoFuturesUniverse(scripRows, params, today)
 
   let universe: UniverseEntry[]
   switch (mode) {
@@ -143,8 +166,8 @@ async function buildUniverse(
       break
   }
 
-  const stats = computeUniverseStats(scripRows, mode, params, now, watchlistTokens)
-  return { universe, atmMap, stats }
+  const stats = computeUniverseStats(scripRows, mode, params, today, watchlistTokens)
+  return { universe, atmMap, stats, scripRows }
 }
 
 /**
@@ -159,10 +182,12 @@ export function createScreenerStore(deps: ScreenerStoreDeps): ScreenerStore {
   let atmMap: AtmMap = {}
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let unsubscribeTicks: (() => void) | null = null
+  let unsubscribePause: (() => void) | null = null
   const lastBarStartByToken = new Map<string, number>()
 
   const store = create<ScreenerState>()(
     immer((set, get) => ({
+      scripRows: [],
       universe: [],
       universeStats: { eligible: 0, included: 0 },
       universeMode: 'both',
@@ -182,14 +207,21 @@ export function createScreenerStore(deps: ScreenerStoreDeps): ScreenerStore {
       lastScanAt: null,
       nextScanAt: null,
       history: [],
+      freshIds: [],
+      clockNow: () => deps.now(),
       selectedRowId: null,
       detailOpenRequest: null,
-      isPaused: false,
+      isPaused: usePauseStore.getState().isPaused,
       connectionState: deps.dataSource.getConnectionState(),
 
       start() {
         if (pollTimer) return
         pollTimer = setInterval(() => pollTick(), pollIntervalMs)
+        unsubscribePause = usePauseStore.subscribe((s) => {
+          store.setState((draft) => {
+            draft.isPaused = s.isPaused
+          })
+        })
         void get().loadUniverse().then(() => get().runScanNow())
       },
 
@@ -198,6 +230,8 @@ export function createScreenerStore(deps: ScreenerStoreDeps): ScreenerStore {
         pollTimer = null
         unsubscribeTicks?.()
         unsubscribeTicks = null
+        unsubscribePause?.()
+        unsubscribePause = null
       },
 
       async loadUniverse() {
@@ -205,16 +239,16 @@ export function createScreenerStore(deps: ScreenerStoreDeps): ScreenerStore {
           draft.scanState = 'loading-universe'
         })
 
-        const { universe, atmMap: freshAtmMap, stats } = await buildUniverse(
-          deps.dataSource,
-          get().universeMode,
-          get().params,
-          deps.now(),
-          get().watchlistTokens,
-        )
+        const {
+          universe,
+          atmMap: freshAtmMap,
+          stats,
+          scripRows,
+        } = await buildUniverse(deps.dataSource, get().universeMode, get().params, deps.now(), get().watchlistTokens)
         atmMap = freshAtmMap
 
         set((draft) => {
+          draft.scripRows = scripRows
           draft.universe = universe
           draft.universeStats = stats
           draft.scanState = 'idle'
@@ -334,8 +368,11 @@ export function createScreenerStore(deps: ScreenerStoreDeps): ScreenerStore {
       },
 
       togglePause() {
+        usePauseStore.getState().togglePause()
+        // Also set directly (not just via the start()-time subscription) so
+        // this works even if called before start() has wired the mirror.
         set((draft) => {
-          draft.isPaused = !draft.isPaused
+          draft.isPaused = usePauseStore.getState().isPaused
         })
       },
 
@@ -382,18 +419,24 @@ export function createScreenerStore(deps: ScreenerStoreDeps): ScreenerStore {
     const nowSec = deps.now()
     const current = store.getState()
     const { rows, expired, created } = mergeScanRows(current.rows, newRows, scannedSymbols, nowSec)
+    // On the very first scan every row is "created" — but that is the
+    // starting state the user opens the app to, not news. Only rows that
+    // appear on a LATER scheduled scan are fresh.
+    const isFirstScan = current.lastScanAt === null
+    const fresh = isFirstScan ? [] : created
 
     store.setState((draft) => {
       draft.rows = rows
       draft.visibleRows = computeVisibleRows(rows, draft.showNseEquityRows)
       draft.history = [...draft.history, ...created, ...expired]
       draft.errors = [...draft.errors.filter((e) => !scannedSymbols.has(e.symbol)), ...newErrors]
+      draft.freshIds = fresh.map((r) => r.id)
     })
 
     // Alerts only fire for genuinely new signals from a real scan — never
-    // for a params what-if exploration (applyImmediateScanOutcome, below,
-    // never calls this).
-    for (const row of created) {
+    // for the first scan's starting state, and never for a params what-if
+    // or replay seek (applyImmediateScanOutcome, below, never calls this).
+    for (const row of fresh) {
       useAlertStore.getState().evaluateRow(row)
     }
   }
@@ -416,6 +459,8 @@ export function createScreenerStore(deps: ScreenerStoreDeps): ScreenerStore {
       draft.rows = rows
       draft.visibleRows = computeVisibleRows(rows, draft.showNseEquityRows)
       draft.errors = newErrors
+      // A what-if / replay seek replaces every row; none of it is news.
+      draft.freshIds = []
     })
   }
 

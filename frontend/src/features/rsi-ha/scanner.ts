@@ -1,4 +1,5 @@
 import type { MarketDataSource } from '../../data/MarketDataSource'
+import { mapWithConcurrency } from '../../lib/concurrent'
 import { analyzeCandles } from '../../strategy/analyzeCandles'
 import { addOptionRecommendations } from '../../strategy/optionLegs'
 import { checkBreakout, checkSignal, selectVisibleRows } from '../../strategy/signals'
@@ -62,31 +63,6 @@ interface PerEntryResult {
 }
 
 const HA_STREAK_LENGTH = 6
-
-/**
- * Runs `fn` over `items` with at most `limit` calls in flight at once,
- * returning results in the SAME order as `items` regardless of which
- * call actually finishes first — completion order must never leak into
- * the output, or a scan would stop being reproducible for a given seed.
- */
-async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length)
-  let nextIndex = 0
-
-  async function worker(): Promise<void> {
-    for (;;) {
-      const current = nextIndex
-      nextIndex += 1
-      if (current >= items.length) return
-      const item = items[current]
-      results[current] = await fn(item, current)
-    }
-  }
-
-  const workerCount = Math.max(1, Math.min(limit, items.length))
-  await Promise.all(Array.from({ length: workerCount }, () => worker()))
-  return results
-}
 
 /**
  * Transliteration of scan_watchlist() (mastertrust_rsi_ha_screener.py lines

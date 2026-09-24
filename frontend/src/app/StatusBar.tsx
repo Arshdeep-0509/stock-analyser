@@ -18,10 +18,13 @@ export function StatusBar() {
   const lastScanAt = useScreenerStore((s) => s.lastScanAt)
   const nextScanAt = useScreenerStore((s) => s.nextScanAt)
   const connectionState = useScreenerStore((s) => s.connectionState)
+  const isPaused = useScreenerStore((s) => s.isPaused)
+  const lastScanDurationMs = useScreenerStore((s) => s.lastScanDurationMs)
 
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  // Simulated market time — nextScanAt is on the store's injected clock, not the wall clock.
+  const [now, setNow] = useState(() => useScreenerStore.getState().clockNow())
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000)
+    const id = window.setInterval(() => setNow(useScreenerStore.getState().clockNow()), 1000)
     return () => window.clearInterval(id)
   }, [])
 
@@ -33,12 +36,17 @@ export function StatusBar() {
     { label: 'Scanned', value: universeSize > 0 ? `${scanned}/${universeSize}` : '—' },
     { label: 'Signals', value: universeSize > 0 ? String(visibleCount) : '—' },
     { label: 'Last scan', value: lastScanAt !== null ? formatISTTime(new Date(lastScanAt * 1000)) : '—' },
-    { label: 'Next scan', value: secondsToNext !== null ? `${secondsToNext}s` : '—' },
+    // Paused: no scan is coming, so no countdown (it used to keep ticking to 0 while nothing would run).
+    { label: 'Next scan', value: isPaused ? 'paused' : secondsToNext !== null ? `${secondsToNext}s` : '—' },
     { label: 'WS', value: connectionState },
   ]
 
   return (
-    <footer className="flex h-statusbar shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap border-t border-border bg-panel px-4 text-xs text-text-secondary">
+    // data-*: the last scan's wall-clock duration and (simulated) time, machine-readable in any build: the perf E2E reads them.
+    <footer
+      data-last-scan-ms={lastScanDurationMs ?? undefined}
+      data-last-scan-at={lastScanAt ?? undefined}
+      className="flex h-statusbar shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap border-t border-border bg-panel px-4 text-xs text-text-secondary">
       {fields.map((field, index) => (
         <Fragment key={field.label}>
           {index > 0 && (

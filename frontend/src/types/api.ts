@@ -82,9 +82,15 @@ export function parseCandleTimestamp(raw: string | number): number {
 
 const loggedFormats = new Set<string>()
 
-/** Surfaces the detected wire format in the dev console — once per format, not once per candle. */
+/**
+ * Surfaces the detected wire format in the dev console — once per format,
+ * not once per candle. `import.meta.env` is a Vite-only global (undefined
+ * when this module runs under plain Node/tsx, e.g. scripts/indexSmoke.ts),
+ * hence the optional chain — not a change to the actual dev/prod behaviour
+ * Vite itself sees.
+ */
 function logDetectedFormatOnce(format: string, sample: string | number): void {
-  if (!import.meta.env.DEV || loggedFormats.has(format)) return
+  if (!import.meta.env?.DEV || loggedFormats.has(format)) return
   loggedFormats.add(format)
   console.debug(`[parseCandleTimestamp] detected "${format}" candle timestamp format, e.g.`, sample)
 }
@@ -110,6 +116,54 @@ export interface ScripRow {
   option_type: string
   [key: string]: unknown
 }
+
+// ---------------------------------------------------------------------------
+// Index quotes — GET /api/v1/charts/tdv against the index's OWN token
+// ---------------------------------------------------------------------------
+
+/**
+ * TODO(contract): UNCONFIRMED. mastertrust_rsi_ha_screener.py never fetches
+ * an index at all — it only scans individual NSE/NFO equities and
+ * derivatives, so there is no line of the Python to transliterate here. A
+ * real backend would fetch NIFTY 50 / NIFTY BANK / India VIX the exact same
+ * way as any other instrument: GET /api/v1/charts/tdv against that index's
+ * own `exchange_token`. Which tokens Master Trust assigns to these three in
+ * its instrument master has not been confirmed against a live response —
+ * these are placeholders, not real tokens.
+ *
+ * The intended resolution order for a real `HttpMarketDataSource`: call
+ * `GET /api/v1/search?key=<name>` (search_symbol() already exists for
+ * this — see §3.1) for `"NIFTY 50"` / `"NIFTY BANK"` / `"INDIA VIX"` at
+ * runtime and use whatever token comes back; fall back to this map only if
+ * search returns nothing. Replace the placeholder values below once the
+ * real tokens are confirmed — don't ship them as real.
+ */
+export const INDEX_TOKENS: Readonly<Record<'NIFTY' | 'BANKNIFTY' | 'INDIAVIX', string>> = {
+  NIFTY: 'UNCONFIRMED-NIFTY-50-TOKEN',
+  BANKNIFTY: 'UNCONFIRMED-NIFTY-BANK-TOKEN',
+  INDIAVIX: 'UNCONFIRMED-INDIA-VIX-TOKEN',
+}
+
+// ---------------------------------------------------------------------------
+// Daily bars — GET /api/v1/charts/tdv with a day-level data_duration
+// ---------------------------------------------------------------------------
+
+/**
+ * TODO(contract): UNCONFIRMED. fetch_historical_candles() (lines 190-226)
+ * always sets `data_duration` to the digits pulled out of `CANDLE_INTERVAL`
+ * ("5minute" -> 5) — the Python never requests a daily bar, so there is no
+ * observed value for a one-day candle's `data_duration`. `1440` (minutes in
+ * a day) is a reasonable guess by analogy with the intraday parameter, nothing
+ * more — do not treat it as confirmed until checked against a live response.
+ *
+ * Until confirmed, the frontend never calls a day-level endpoint at all: it
+ * aggregates the 5-minute bars it already has into session bars itself, in
+ * exactly one function, `aggregateToSessions()`
+ * (`src/analytics/daily.ts`), so swapping to a real daily endpoint later is
+ * a one-line change in whichever `MarketDataSource.fetchDailyBars()`
+ * implementation is active — not a change to any of its callers.
+ */
+export const DAILY_DATA_DURATION_MINUTES_GUESS = 1440
 
 // ---------------------------------------------------------------------------
 // Primus WebSocket tick (primusapi.tradelab.in) — UNCONFIRMED

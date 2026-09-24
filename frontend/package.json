@@ -8,8 +8,19 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "typecheck": "tsc -b",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:parity": "vite-node scripts/parityDiff.ts",
+    "test:all": "npm run typecheck && npm run test:cov && npm run test:parity && npm run test:e2e",
+    "fixtures:generate": "vite-node scripts/genFixtures.ts",
+    "smoke:index": "tsx scripts/indexSmoke.ts",
+    "smoke:strength": "tsx scripts/strengthSmoke.ts",
+    "check:breakouts": "tsx scripts/breakoutCrossCheck.ts",
+    "check:responsive": "node scripts/responsive-check.mjs",
+    "perf:intraday": "node scripts/intraday-perf.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
@@ -26,6 +37,8 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "1.63.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
@@ -36,12 +49,16 @@
     "@vitest/coverage-v8": "^4.1.11",
     "@vitest/ui": "^4.1.11",
     "autoprefixer": "^10.6.0",
+    "fast-check": "^4.10.2",
     "jsdom": "^29.1.1",
     "oxlint": "^1.81.0",
+    "playwright-core": "1.63.0",
     "postcss": "^8.5.28",
     "tailwindcss": "^3.4.19",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
+    "vite-node": "^6.0.0",
     "vitest": "^4.1.11"
   }
 }

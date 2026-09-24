@@ -1,13 +1,35 @@
 import { BASE_INTERVAL_MINUTES } from '../../strategy/resampleCandles'
 import type { ScripRow, SearchResponse } from '../../types/api'
-import type { Candle, Exchange, MarketTick } from '../../types/domain'
-import type { ConnectionState, MarketDataSource } from '../MarketDataSource'
+import type { Candle, Exchange, Instrument, MarketTick } from '../../types/domain'
+import type { ConnectionState, IndexQuote, IndexQuoteKey, MarketDataSource } from '../MarketDataSource'
 import { parseHistoricalCandlesResponse } from '../parseCandles'
+import { aggregateToSessions } from '../../analytics/daily'
+import {
+  buildIndexQuote,
+  computeCapWeightedIndexSeries,
+  generateIndiaVixSeries,
+  type WeightedConstituent,
+} from '../../analytics/indexComposite'
+import { INDEX_PANELS } from '../reference/indices'
 import type { ClockMode, ClockSpeed } from './clock'
 import { MockClock } from './clock'
 import { deriveSeed, mulberry32, randomFloat, type Rng } from './rng'
 import { generateUniverse, type GeneratedUniverse } from './generateUniverse'
 import { MockPrimusSocket } from './mockPrimus'
+
+/**
+ * CandleEngine's session grid is a fixed 5 TRADING days, but
+ * getRawHistoricalResponse()'s `daysBack` cutoff is a wall-clock window
+ * (`referenceNow - daysBack*86400`) — since trading hours are only
+ * 09:15-15:30 IST, a `daysBack` of exactly 5 can fall mid-session and clip
+ * 1-2 of the grid's boundary days depending on what time of day `now` is
+ * (e.g. at 16:10 IST, "5 days back" lands after that day's own 15:30
+ * close, silently excluding it). This buffer is generously larger than the
+ * grid could ever be, so it always captures the full 5 trading days
+ * regardless of time-of-day skew — CandleEngine has nothing further back
+ * to return anyway, so asking for more than exists is harmless.
+ */
+const RAW_FETCH_DAYS_BACK = 10
 
 /**
  * Deliberately excludes `now` — it changes every second (or faster, at
@@ -33,6 +55,8 @@ export interface MockDevState {
 }
 
 export const DEFAULT_SEED = 424242
+/** Share of requests that fail with a simulated error — the mock's standing "real network is flaky" behaviour. */
+export const DEFAULT_FAILURE_RATE = 0.02
 
 /**
  * A fake Master Trust that is indistinguishable from the real one at the
@@ -57,6 +81,7 @@ export class MockMarketDataSource implements MarketDataSource {
   private readonly primus: MockPrimusSocket
   private runtimeRng: Rng
   private forceNextError = false
+  private failureRate = DEFAULT_FAILURE_RATE
   private fastForward = false
   private readonly devListeners = new Set<() => void>()
   private lastDevState: MockDevState | null = null
@@ -118,30 +143,84 @@ export class MockMarketDataSource implements MarketDataSource {
     return this.universe.scripMaster.rows
   }
 
-  subscribeTicks(tokens: string[], onTick: (tick: MarketTick) => void): () => void {
-    return this.primus.subscribe(tokens, (tick) => {
-      onTick({
-        token: String(tick.token),
-        exchange: tick.exchange === 'NFO' ? 'NFO' : 'NSE',
-        ltp: tick.ltp,
-        time: tick.ltt,
-        volume: tick.volume,
-        open: tick.o,
-        high: tick.h,
-        low: tick.l,
-        close: tick.c,
-      })
-    })
+  subscribeTicks(tokens: string[], onTick: (tick: MarketTick) => void, opts?: { priority?: string[] }): () => void {
+    return this.primus.subscribe(
+      tokens,
+      (tick) => {
+        onTick({
+          token: String(tick.token),
+          exchange: tick.exchange === 'NFO' ? 'NFO' : 'NSE',
+          ltp: tick.ltp,
+          time: tick.ltt,
+          volume: tick.volume,
+          open: tick.o,
+          high: tick.h,
+          low: tick.l,
+          close: tick.c,
+        })
+      },
+      opts,
+    )
   }
 
   getConnectionState(): ConnectionState {
     return this.primus.getState()
   }
 
+  async fetchIndexQuotes(keys: IndexQuoteKey[]): Promise<IndexQuote[]> {
+    await this.delay(80, 250)
+
+    if (this.shouldFail()) {
+      throw new Error(`fetchIndexQuotes: simulated failure for keys=${keys.join(',')}`)
+    }
+
+    const now = this.clock.now()
+    const niftySeries = this.compositeSeriesFor('NIFTY_50', now)
+
+    return keys.map((key) => {
+      if (key === 'INDIAVIX') {
+        const rng = mulberry32(deriveSeed(this.seed, 'india-vix'))
+        const vixSeries = generateIndiaVixSeries(
+          niftySeries,
+          { baseline: 13, reversionStrength: 0.05, volPerBar: 0.15, antiCorrelation: 0.6 },
+          rng,
+        )
+        return buildIndexQuote('INDIAVIX', 'India VIX', vixSeries, now)
+      }
+
+      if (key === 'BANKNIFTY') {
+        return buildIndexQuote('BANKNIFTY', 'BANK NIFTY', this.compositeSeriesFor('BANK_NIFTY', now), now)
+      }
+
+      return buildIndexQuote('NIFTY', 'NIFTY 50', niftySeries, now)
+    })
+  }
+
+  async fetchDailyBars(instrument: Pick<Instrument, 'token' | 'exchange'>, days: number): Promise<Candle[]> {
+    await this.delay(80, 250)
+
+    if (this.shouldFail()) {
+      throw new Error(`fetchDailyBars: simulated failure for token=${instrument.token}`)
+    }
+
+    const startPrice = this.startPriceFor(instrument.token)
+    const raw = this.universe.candleEngine.getRawHistoricalResponse(instrument.token, startPrice, RAW_FETCH_DAYS_BACK)
+    const closed = parseHistoricalCandlesResponse(raw, BASE_INTERVAL_MINUTES, this.clock.now())
+    return aggregateToSessions(closed).slice(-days)
+  }
+
   // ---------------------------------------------------------------------
   // Dev-only controls — NOT part of MarketDataSource. Only the devtools
   // panel should ever import this class directly to reach these.
   // ---------------------------------------------------------------------
+
+  /**
+   * TEST HOOK (dev-only, not on MarketDataSource): the share of requests, 0..1,
+   * that throw a simulated failure. 1 = every request fails, 0 = none.
+   */
+  setFailureRate(rate: number): void {
+    this.failureRate = Math.min(1, Math.max(0, rate))
+  }
 
   setSeed(seed: number): void {
     this.seed = seed
@@ -270,6 +349,46 @@ export class MockMarketDataSource implements MarketDataSource {
     return map
   }
 
+  /** Base symbol (company_name, always the base symbol per scripMaster.ts) -> its NSE EQ token + cachedClose. */
+  private baseSymbolIndex(): Map<string, { token: string; cachedClose: number }> {
+    const map = new Map<string, { token: string; cachedClose: number }>()
+    for (const row of this.universe.scripMaster.rows) {
+      if (row.exchange !== 'NSE' || row.instrument_name !== 'EQ') continue
+      const price = Number(row.close_price)
+      if (Number.isNaN(price)) continue
+      map.set(row.company_name, { token: String(row.exchange_token), cachedClose: price })
+    }
+    return map
+  }
+
+  /**
+   * Builds a capitalisation-weighted composite series for a named index
+   * panel (src/data/reference/indices.ts) from its constituents' own closed
+   * candles — the same closed-candle pipeline fetchHistoricalCandles() uses,
+   * so an index quote is never a separate random walk from what the
+   * screener shows for the same stocks.
+   */
+  private compositeSeriesFor(panelKey: 'NIFTY_50' | 'BANK_NIFTY', now: number): Candle[] {
+    const panel = INDEX_PANELS.find((p) => p.key === panelKey)
+    if (!panel) throw new Error(`compositeSeriesFor: unknown panel ${panelKey}`)
+
+    const bySymbol = this.baseSymbolIndex()
+    const constituents: WeightedConstituent[] = []
+
+    for (const symbol of panel.constituents) {
+      const entry = bySymbol.get(symbol)
+      if (!entry) continue
+
+      const raw = this.universe.candleEngine.getRawHistoricalResponse(entry.token, entry.cachedClose, RAW_FETCH_DAYS_BACK)
+      const closed = parseHistoricalCandlesResponse(raw, BASE_INTERVAL_MINUTES, now)
+      if (closed.length === 0) continue
+
+      constituents.push({ weight: entry.cachedClose, series: closed })
+    }
+
+    return computeCapWeightedIndexSeries(constituents)
+  }
+
   private startPriceFor(token: string): number {
     const row = this.scripRowByToken.get(token)
     if (!row) return 2500
@@ -287,7 +406,8 @@ export class MockMarketDataSource implements MarketDataSource {
       this.forceNextError = false
       return true
     }
-    return this.runtimeRng() < 0.02
+    // Always draw, whatever the rate, so changing the rate never shifts the rest of the seeded runtime sequence.
+    return this.runtimeRng() < this.failureRate
   }
 
   private delay(minMs: number, maxMs: number): Promise<void> {

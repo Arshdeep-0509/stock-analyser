@@ -25,7 +25,7 @@ describe('generateUniverse', () => {
     expect(a.results.map((r) => ({ token: r.entry.token, signal: r.signal, breakout: r.breakout }))).toEqual(
       b.results.map((r) => ({ token: r.entry.token, signal: r.signal, breakout: r.breakout })),
     )
-  })
+  }, 20000) // two full universe generations — ~2s alone, but can exceed the 5s default when the whole suite runs in parallel
 
   it('produces every signal from candles that actually emerge from the generator, not from a lookup table', () => {
     const result = generateUniverse(DEFAULT_SEED, REFERENCE_NOW)

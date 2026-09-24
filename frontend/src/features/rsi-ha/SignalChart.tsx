@@ -17,16 +17,32 @@ import { theme } from '../../app/theme'
 import { CHART_HEIGHT_CLASS } from './chartHeight'
 import { haStreakLength } from '../../strategy/indicators'
 import type { StrategyParams } from '../../strategy/constants'
-import type { AnalyzedCandle, Candle } from '../../types/domain'
-import type { ScreenerRow } from '../../store/types'
+import type { AnalyzedCandle, Candle, SignalKind } from '../../types/domain'
 import { formatNumber } from '../../lib/formatters'
+
+/**
+ * The only fields this chart actually reads off a "row" — deliberately NOT
+ * `ScreenerRow` itself, so a caller with a different row shape (e.g.
+ * /intraday's drill-down drawer, built from an IntradayRow) can construct
+ * one of these directly instead of needing a second chart component.
+ * `signal` is optional: omitting it (and `level`) renders a plain chart with
+ * neither a BUY/SELL marker nor a breakout level line — the correct
+ * behaviour for a row that isn't currently a signal or a breakout.
+ */
+export interface SignalChartRow {
+  time: number
+  signal?: SignalKind
+  level?: number
+}
 
 export interface SignalChartProps {
   candles: Candle[]
   analyzed: AnalyzedCandle[]
   params: StrategyParams
-  row: ScreenerRow
+  row: SignalChartRow
   showRawOverlay: boolean
+  /** Optional VWAP reference line — /intraday's drill-down drawer passes today's session VWAP (IntradayRow.vwap); /rsi-ha's own detail view omits it. Drawn as a plain price line, distinct in colour/style from the breakout level line so the two are never confused. */
+  vwap?: number
 }
 
 export interface HoverInfo {
@@ -47,7 +63,7 @@ export interface HoverInfo {
 const UPPER_STRETCH = 7
 const LOWER_STRETCH = 3
 
-export function SignalChart({ candles, analyzed, params, row, showRawOverlay }: SignalChartProps) {
+export function SignalChart({ candles, analyzed, params, row, showRawOverlay, vwap }: SignalChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<HoverInfo | null>(null)
 
@@ -186,6 +202,18 @@ export function SignalChart({ candles, analyzed, params, row, showRawOverlay }: 
       }
     }
 
+    // ---- VWAP: a plain reference line, distinct from the breakout level's dashed warning line ----
+    if (vwap !== undefined && !Number.isNaN(vwap)) {
+      haSeries.createPriceLine({
+        price: vwap,
+        color: theme.colors.neutral,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: `VWAP ${formatNumber(vwap, 2)}`,
+      })
+    }
+
     // ---- Lower pane: RSI line, 60-65/35-40 bands shaded, 30/70 reference lines ----
     const rsiPoints = analyzed.filter((c) => !Number.isNaN(c.rsi)).map((c) => ({ time: c.time as UTCTimestamp, value: c.rsi }))
     const rsiSeries = chart.addSeries(LineSeries, { color: theme.colors.neutral, lineWidth: 2 }, 1)
@@ -278,7 +306,7 @@ export function SignalChart({ candles, analyzed, params, row, showRawOverlay }: 
     return () => {
       chart.remove()
     }
-  }, [candles, analyzed, params, row, showRawOverlay])
+  }, [candles, analyzed, params, row, showRawOverlay, vwap])
 
   return (
     <div className="relative">

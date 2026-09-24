@@ -12,11 +12,14 @@
   /* Text */
   --color-text-primary: 230 237 243; /* #E6EDF3 */
   --color-text-secondary: 139 154 168; /* #8B9AA8 */
-  --color-text-muted: 90 107 122; /* #5A6B7A */
+  --color-text-muted: 122 138 153; /* #7A8A99 — >=5:1 on surface and panel (was #5A6B7A, 3.5:1: axe color-contrast) */
 
   /* Semantic */
   --color-bullish: 38 161 123; /* #26A17B */
   --color-bearish: 229 72 77; /* #E5484D */
+  /* Text on a 15% tint of the same hue (signal badges): the base hues reach only ~4.3:1 there. */
+  --color-bullish-text: 52 184 142; /* #34B88E */
+  --color-bearish-text: 242 110 114; /* #F26E72 */
   --color-warning: 227 160 8; /* #E3A008 */
   --color-neutral: 74 144 217; /* #4A90D9 */
 
@@ -51,10 +54,12 @@
 
   --color-text-primary: 16 24 40; /* #101828 */
   --color-text-secondary: 71 84 103; /* #475467 */
-  --color-text-muted: 138 150 166; /* #8A96A6 */
+  --color-text-muted: 95 106 122; /* #5F6A7A — >=5:1 on surface and panel (was #8A96A6, 2.8:1) */
 
   --color-bullish: 15 122 89; /* #0F7A59 */
   --color-bearish: 200 40 45; /* #C8282D */
+  --color-bullish-text: 10 104 75; /* #0A684B */
+  --color-bearish-text: 176 30 36; /* #B01E24 */
   --color-warning: 161 98 7; /* #A16207 */
   --color-neutral: 30 96 173; /* #1E60AD */
 

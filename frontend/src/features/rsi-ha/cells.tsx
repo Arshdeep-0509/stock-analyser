@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import { Link2 } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ArrowDown, ArrowUp, Link2, TrendingDown, TrendingUp } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { Tooltip } from '../../components/ui/Tooltip'
 import { cn } from '../../lib/cn'
 import { formatINR, formatISTTime, formatNumber } from '../../lib/formatters'
+import { DEFAULT_PARAMS, type StrategyParams } from '../../strategy/constants'
 import type { SignalKind } from '../../types/domain'
 import type { InstrumentType } from './rowHelpers'
 
@@ -16,18 +17,27 @@ const FLASH_DURATION_MS = 400
 export function SignalBadge({ signal, onHoverDerived }: { signal: SignalKind; onHoverDerived?: (hovering: boolean) => void }) {
   switch (signal) {
     case 'BUY':
-      return <Badge variant="bullish">BUY</Badge>
+      // Every kind carries a glyph AND its text — never distinguishable by colour alone.
+      return (
+        <Badge variant="bullish" icon={<ArrowUp className="h-3 w-3" aria-hidden="true" />}>
+          BUY
+        </Badge>
+      )
     case 'SELL':
-      return <Badge variant="bearish">SELL</Badge>
+      return (
+        <Badge variant="bearish" icon={<ArrowDown className="h-3 w-3" aria-hidden="true" />}>
+          SELL
+        </Badge>
+      )
     case 'BREAKOUT-UP':
       return (
-        <Badge variant="bullish" outline>
+        <Badge variant="bullish" outline icon={<TrendingUp className="h-3 w-3" aria-hidden="true" />}>
           BREAKOUT-UP
         </Badge>
       )
     case 'BREAKOUT-DOWN':
       return (
-        <Badge variant="bearish" outline>
+        <Badge variant="bearish" outline icon={<TrendingDown className="h-3 w-3" aria-hidden="true" />}>
           BREAKOUT-DOWN
         </Badge>
       )
@@ -78,7 +88,14 @@ export function TimeCell({ epochSeconds }: { epochSeconds: number }) {
 // RSI: value + inline 0-100 bar with the BUY/SELL bands shaded
 // ---------------------------------------------------------------------------
 
-export function RsiCell({ rsi, inherited }: { rsi: number; inherited?: string }) {
+export type RsiBands = Pick<StrategyParams, 'rsiBuyLow' | 'rsiBuyHigh' | 'rsiSellLow' | 'rsiSellHigh'>
+
+/**
+ * `bands` are the params the scan is actually running with — after a
+ * Parameters edit, shading the reference 35–40 / 60–65 would show bands the
+ * strategy isn't using. Defaults to the reference strategy.
+ */
+export function RsiCell({ rsi, inherited, bands = DEFAULT_PARAMS }: { rsi: number; inherited?: string; bands?: RsiBands }) {
   if (Number.isNaN(rsi)) {
     return <span className="font-mono tabular-nums text-text-muted">—</span>
   }
@@ -87,8 +104,16 @@ export function RsiCell({ rsi, inherited }: { rsi: number; inherited?: string })
     <span className={cn('inline-flex items-center gap-1.5', inherited && 'opacity-50')}>
       <span className="w-9 font-mono tabular-nums text-text-primary">{formatNumber(rsi, 1)}</span>
       <span className="relative h-[14px] w-16 overflow-hidden rounded-sm border border-border-hairline bg-surface">
-        <span className="absolute inset-y-0 bg-bearish/25" style={{ left: '35%', width: '5%' }} aria-hidden="true" />
-        <span className="absolute inset-y-0 bg-bullish/25" style={{ left: '60%', width: '5%' }} aria-hidden="true" />
+        <span
+          className="absolute inset-y-0 bg-bearish/25"
+          style={{ left: `${bands.rsiSellLow}%`, width: `${bands.rsiSellHigh - bands.rsiSellLow}%` }}
+          aria-hidden="true"
+        />
+        <span
+          className="absolute inset-y-0 bg-bullish/25"
+          style={{ left: `${bands.rsiBuyLow}%`, width: `${bands.rsiBuyHigh - bands.rsiBuyLow}%` }}
+          aria-hidden="true"
+        />
         <span
           className="absolute inset-y-0 w-[2px] bg-text-primary"
           style={{ left: `${Math.max(0, Math.min(100, rsi))}%` }}
@@ -149,10 +174,46 @@ export function PriceCell({ price }: { price: number }) {
 }
 
 // ---------------------------------------------------------------------------
+// FlashSpan — the shared "flash background on change" presentational shell.
+// LtpCell (below) drives it from its OWN internal before/after comparison;
+// a caller that already knows (from elsewhere) whether THIS render should
+// flash — e.g. SectorGrid, which computes flash direction once per card so
+// it can cap how many rows flash at once — passes `flash` in directly
+// instead. Either way the visual treatment is identical everywhere.
+// ---------------------------------------------------------------------------
+
+export interface FlashSpanProps {
+  flash: 'up' | 'down' | null
+  className?: string
+  children: ReactNode
+}
+
+export function FlashSpan({ flash, className, children }: FlashSpanProps) {
+  return (
+    <span
+      className={cn(
+        'inline-block rounded px-1 font-mono tabular-nums transition-colors duration-300',
+        flash === 'up' && 'bg-bullish/25',
+        flash === 'down' && 'bg-bearish/25',
+        className,
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Live LTP — flashes green/red on change, background only, never reflows
 // ---------------------------------------------------------------------------
 
-export function LtpCell({ ltp }: { ltp: number | undefined }) {
+export interface LtpCellProps {
+  ltp: number | undefined
+  /** How to render a defined value — defaults to ₹ currency (the /rsi-ha usage). /intraday's quote strip passes a plain-number formatter instead; the flash-on-change mechanism itself never changes. */
+  format?: (value: number) => string
+}
+
+export function LtpCell({ ltp, format = formatINR }: LtpCellProps) {
   const [flash, setFlash] = useState<'up' | 'down' | null>(null)
   const prevRef = useRef(ltp)
 
@@ -167,38 +228,21 @@ export function LtpCell({ ltp }: { ltp: number | undefined }) {
     prevRef.current = ltp
   }, [ltp])
 
-  return (
-    <span
-      className={cn(
-        'inline-block rounded px-1 font-mono tabular-nums text-text-primary transition-colors duration-300',
-        flash === 'up' && 'bg-bullish/25',
-        flash === 'down' && 'bg-bearish/25',
-      )}
-    >
-      {ltp === undefined ? <span className="text-text-muted">—</span> : formatINR(ltp)}
-    </span>
-  )
+  return <FlashSpan flash={flash} className="text-text-primary">{ltp === undefined ? <span className="text-text-muted">—</span> : format(ltp)}</FlashSpan>
 }
 
 // ---------------------------------------------------------------------------
 // Change % vs signal price
 // ---------------------------------------------------------------------------
 
-export function ChangePercentCell({ value }: { value: number | null }) {
+export function ChangePercentCell({ value, flash = null }: { value: number | null; flash?: 'up' | 'down' | null }) {
   if (value === null) return <span className="font-mono tabular-nums text-text-muted">—</span>
   const positive = value > 0
   const negative = value < 0
   return (
-    <span
-      className={cn(
-        'font-mono tabular-nums',
-        positive && 'text-bullish',
-        negative && 'text-bearish',
-        !positive && !negative && 'text-text-secondary',
-      )}
-    >
+    <FlashSpan flash={flash} className={cn(positive && 'text-bullish', negative && 'text-bearish', !positive && !negative && 'text-text-secondary')}>
       {positive ? '+' : ''}
       {formatNumber(value, 2)}%
-    </span>
+    </FlashSpan>
   )
 }

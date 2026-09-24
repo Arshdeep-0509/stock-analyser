@@ -11,8 +11,8 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const variantClasses: Record<BadgeVariant, string> = {
-  bullish: 'bg-bullish/15 text-bullish border-bullish/30',
-  bearish: 'bg-bearish/15 text-bearish border-bearish/30',
+  bullish: 'bg-bullish/15 text-bullish-text border-bullish/30',
+  bearish: 'bg-bearish/15 text-bearish-text border-bearish/30',
   warning: 'bg-warning/15 text-warning border-warning/30',
   neutral: 'bg-neutral/15 text-neutral border-neutral/30',
   default: 'bg-panel text-text-secondary border-border',

@@ -112,10 +112,15 @@ function rowsToHistoryCsv(rows: readonly ScreenerRow[], outcomes: Map<string, Ou
   return lines.join('\n')
 }
 
+const NO_ROWS: readonly ScreenerRow[] = []
+
 export function HistoryDrawer({ open, onClose, store }: HistoryDrawerProps) {
   const rawHistory = store((s) => s.history)
   const rows = useMemo(() => dedupeHistory(rawHistory), [rawHistory])
-  const outcomes = useOutcomes(open ? rows : [], store)
+  // NO_ROWS, not a fresh `[]`: useOutcomes' effect depends on this array, and a new one
+  // every render re-ran it forever while closed (effect -> setOutcomes -> render -> new [] -> ...),
+  // which froze the page when a click re-rendered the left rail synchronously.
+  const outcomes = useOutcomes(open ? rows : NO_ROWS, store)
 
   useEscapeToClose(open, onClose)
 

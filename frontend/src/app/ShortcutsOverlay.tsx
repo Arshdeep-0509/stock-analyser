@@ -36,6 +36,15 @@ const GROUPS: readonly ShortcutGroup[] = [
     ],
   },
   {
+    title: 'Intraday',
+    items: [
+      ['/', 'Focus instrument search'],
+      ['s', 'Cycle the sector filter'],
+      ['b', 'Toggle breakout-only'],
+      ['Esc', 'Close drawer, then clear filters'],
+    ],
+  },
+  {
     title: 'Help',
     items: [['?', 'Show this cheat sheet']],
   },

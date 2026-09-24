@@ -150,6 +150,7 @@ interface SignalCardProps {
 
 function SignalCard({ row, store, isSelected, isFresh, style, onOpen, onLongPress }: SignalCardProps) {
   const ltp = store((s) => (row.token ? s.liveLtp.get(row.token) : undefined))
+  const params = store((s) => s.params)
   const instrumentType = getInstrumentType(row)
   const derived = isDerivedRow(row)
   const change = ltp === undefined || row.price === 0 ? null : ((ltp - row.price) / row.price) * 100
@@ -234,7 +235,7 @@ function SignalCard({ row, store, isSelected, isFresh, style, onOpen, onLongPres
             <ExchangeChip exchange={row.exchange} />
             <InstrumentTypeChip type={instrumentType} />
             {row.pinned && <Pin className="h-3 w-3 shrink-0 text-warning" aria-label="Pinned" />}
-            <RsiCell rsi={row.rsi} inherited={derived ? row.derivedFrom : undefined} />
+            <RsiCell rsi={row.rsi} inherited={derived ? row.derivedFrom : undefined} bands={params} />
             <HaStreakSparkline colors={row.haStreak} />
             {row.level !== undefined && <LevelCell level={row.level} />}
           </span>

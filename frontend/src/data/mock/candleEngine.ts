@@ -19,7 +19,7 @@ function istToEpochSeconds(year: number, month0: number, day: number, minutesSin
 }
 
 /** The most recent `count` weekday (Mon-Fri) IST calendar dates at or before `referenceNow`, oldest first. */
-function recentTradingDays(referenceNow: number, count: number): Array<{ year: number; month0: number; day: number }> {
+export function recentTradingDays(referenceNow: number, count: number): Array<{ year: number; month0: number; day: number }> {
   const days: Array<{ year: number; month0: number; day: number }> = []
   let cursorEpoch = referenceNow
 
@@ -34,9 +34,16 @@ function recentTradingDays(referenceNow: number, count: number): Array<{ year: n
   return days.reverse()
 }
 
-/** All 375 (5 days x 75 bars) bar-start epoch-second timestamps, oldest first. */
+/**
+ * All 375 (5 days x 75 bars) bar-start epoch-second timestamps, oldest first:
+ * the last `daysBack` sessions that have STARTED by `referenceNow`. Before
+ * 09:15 today's session hasn't begun, so it isn't one of them; the history
+ * then holds five completed sessions, as a real API's would, not four plus
+ * a day of bars that haven't happened yet.
+ */
 export function buildSessionGrid(referenceNow: number, daysBack = 5): number[] {
-  const days = recentTradingDays(referenceNow, daysBack)
+  const beforeOpen = istMinutesOfDay(referenceNow) < MARKET_OPEN_MINUTES
+  const days = recentTradingDays(beforeOpen ? referenceNow - 24 * 60 * 60 : referenceNow, daysBack)
   const times: number[] = []
   for (const day of days) {
     for (let bar = 0; bar < BARS_PER_DAY; bar++) {
@@ -210,53 +217,119 @@ export class CandleEngine {
   }
 
   /**
-   * Advances the live tick/candle state for a token to `now`: rolls a new
-   * 5-minute candle onto the same in-memory series whenever `now` crosses a
-   * bar boundary (backfilling any boundaries a sped-up clock skipped over
-   * between two ticks, so the series stays gap-free), then nudges the
-   * current forming bar. Returns the tick price, which always equals the
-   * forming candle's close — a tick and its candle never disagree because
-   * both come from this one code path over this one shared series.
+   * Advances the live tick/candle state for a token to `now` and returns the
+   * tick — or null when no bar is forming (the market is closed), because a
+   * real feed is silent then: nothing moves and nothing is invented, so the
+   * screen holds the 15:30 close until the next session opens.
+   *
+   * The bar containing `now` either already exists (today's bars are
+   * generated up front, so the closed-candle history is seed-deterministic
+   * and independent of how often anything ticked) or is rolled on here —
+   * session bars only (09:15-15:25 bar starts, Mon-Fri), backfilling any a
+   * long-running tab or sped-up clock skipped so the series stays gap-free.
+   * The tick is that bar's state `elapsed` of the way through it: a seeded
+   * path from its open to its close that never leaves its high/low, so a
+   * tick and the candle it belongs to can never disagree, and the bar the
+   * history returns once it closes is exactly the bar the ticks showed.
+   *
+   * `allowOffSession` is the devtools "Force OPEN" override: bars are rolled
+   * on every 5 minutes whatever the time, so the demo runs after hours.
    */
-  advanceLiveTick(token: string, startPrice: number, now: number): { price: number; candle: Candle } {
+  advanceLiveTick(token: string, startPrice: number, now: number, allowOffSession = false): { price: number; candle: Candle } | null {
+    const barSeconds = BAR_MINUTES * 60
+    const barStart = Math.floor(now / barSeconds) * barSeconds
+    if (!allowOffSession && !isSessionBar(barStart)) return null
+
     const series = this.ensureSeries(token, startPrice)
     const params = this.genParamsByToken.get(token) ?? defaultGenParams(this.seed, token, startPrice)
-    const barStart = Math.floor(now / (BAR_MINUTES * 60)) * (BAR_MINUTES * 60)
 
     let last = series[series.length - 1]
     if (!last) {
       const rng = mulberry32(deriveSeed(this.seed, `tick:${token}:${barStart}`))
-      const candle: Candle = { time: barStart, open: startPrice, high: startPrice, low: startPrice, close: startPrice, volume: volumeForBar(0, rng) }
-      series.push(candle)
-      return { price: startPrice, candle }
+      last = { time: barStart, open: startPrice, high: startPrice, low: startPrice, close: startPrice, volume: volumeForBar(0, rng) }
+      series.push(last)
     }
 
     while (barStart > last.time) {
-      const nextTime: number = last.time + BAR_MINUTES * 60
+      const nextTime = allowOffSession ? last.time + barSeconds : nextSessionBar(last.time)
+      if (nextTime > barStart) break
       const rng = mulberry32(deriveSeed(this.seed, `tick:${token}:${nextTime}`))
       const open = last.close
       const shock = randomGaussian(rng) * params.volPerBar
       const close = round2(open * Math.exp(params.drift + shock))
+      const wickUp = Math.abs(randomGaussian(rng)) * params.volPerBar * 0.6
+      const wickDown = Math.abs(randomGaussian(rng)) * params.volPerBar * 0.6
       const candle: Candle = {
         time: nextTime,
         open,
-        high: round2(Math.max(open, close)),
-        low: round2(Math.min(open, close)),
+        high: round2(Math.max(open, close) * (1 + wickUp)),
+        low: round2(Math.min(open, close) * (1 - wickDown)),
         close,
-        volume: volumeForBar(0, rng),
+        volume: volumeForBar(barIndexInDay(nextTime), rng),
       }
       series.push(candle)
       last = candle
     }
 
-    // Nudge the current forming bar for this tick.
-    const rng = mulberry32(deriveSeed(this.seed, `tick:${token}:${now}`))
-    const shock = randomGaussian(rng) * params.volPerBar * 0.2
-    const close = round2(last.close * Math.exp(shock))
-    last.close = close
-    last.high = round2(Math.max(last.high, close))
-    last.low = round2(Math.min(last.low, close))
-    last.volume += randomInt(rng, 50, 2000)
-    return { price: close, candle: last }
+    const bar = findBar(series, barStart)
+    if (!bar) return null
+    const elapsed = Math.min(1, Math.max(0, (now - barStart) / barSeconds))
+    const forming = formingState(bar, elapsed, mulberry32(deriveSeed(this.seed, `tick:${token}:${now}`)))
+    return { price: forming.close, candle: forming }
   }
+}
+
+/** True when `barStart` is one of a trading day's 75 bar starts (09:15-15:25 IST, Mon-Fri). */
+export function isSessionBar(barStart: number): boolean {
+  const parts = toIstParts(barStart)
+  if (parts.weekday === 0 || parts.weekday === 6) return false
+  const minutes = istMinutesOfDay(barStart)
+  return minutes >= MARKET_OPEN_MINUTES && minutes < MARKET_OPEN_MINUTES + BARS_PER_DAY * BAR_MINUTES
+}
+
+/** The first session bar start strictly after `time`. */
+export function nextSessionBar(time: number): number {
+  const barSeconds = BAR_MINUTES * 60
+  let t = Math.floor(time / barSeconds) * barSeconds + barSeconds
+  if (isSessionBar(t)) return t
+  // Jump to the next weekday's 09:15 instead of walking every overnight slot.
+  for (;;) {
+    const p = toIstParts(t)
+    const open = istToEpochSeconds(p.year, p.month0, p.day, MARKET_OPEN_MINUTES)
+    t = open > t ? open : istToEpochSeconds(p.year, p.month0, p.day + 1, MARKET_OPEN_MINUTES)
+    if (isSessionBar(t)) return t
+  }
+}
+
+function istMinutesOfDay(epochSeconds: number): number {
+  const d = new Date((epochSeconds + (5 * 60 + 30) * 60) * 1000)
+  return d.getUTCHours() * 60 + d.getUTCMinutes()
+}
+
+function barIndexInDay(barStart: number): number {
+  return Math.floor((istMinutesOfDay(barStart) - MARKET_OPEN_MINUTES) / BAR_MINUTES)
+}
+
+function findBar(series: readonly Candle[], time: number): Candle | undefined {
+  for (let i = series.length - 1; i >= 0; i--) {
+    if (series[i].time === time) return series[i]
+    if (series[i].time < time) return undefined
+  }
+  return undefined
+}
+
+/**
+ * A bar's state `elapsed` (0..1) of the way through it: price on a line from
+ * open to close plus seeded noise that fades to zero at the close, clamped to
+ * the bar's range; high/low are the extremes reached so far (they grow
+ * toward the bar's own, reaching them at the close); volume accrues linearly.
+ * At elapsed = 1 it returns the bar itself, value for value.
+ */
+export function formingState(bar: Candle, elapsed: number, rng: Rng): Candle {
+  if (elapsed >= 1) return { ...bar }
+  const noise = randomGaussian(rng) * (bar.high - bar.low) * 0.25 * Math.sqrt(elapsed * (1 - elapsed))
+  const close = round2(Math.min(bar.high, Math.max(bar.low, bar.open + (bar.close - bar.open) * elapsed + noise)))
+  const high = round2(Math.max(close, bar.open + (bar.high - bar.open) * elapsed))
+  const low = round2(Math.min(close, bar.open - (bar.open - bar.low) * elapsed))
+  return { time: bar.time, open: bar.open, high, low, close, volume: Math.round(bar.volume * elapsed) }
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { formatISTTime } from '../../lib/formatters'
+import { getRenderCounts, resetRenderCounts } from '../../lib/renderCounter'
 import type { ClockSpeed } from './clock'
 import type { MockMarketDataSource } from './MockMarketDataSource'
 
@@ -10,6 +11,49 @@ export interface MockDevtoolsPanelProps {
 const SPEED_OPTIONS: readonly ClockSpeed[] = [1, 10, 60, 300]
 
 const buttonClass = 'rounded border border-border px-2 py-0.5 hover:bg-surface hover:text-text-primary'
+
+/**
+ * Committed-render counts per instrumented component (see lib/renderCounter.ts),
+ * re-read on the panel's own 1s refresh. "Reset" zeroes them so a fresh
+ * N-second window can be measured.
+ */
+function RenderCountOverlay() {
+  const [since, setSince] = useState(() => Date.now())
+  const counts = getRenderCounts()
+  const elapsedSec = Math.max(1, Math.round((Date.now() - since) / 1000))
+
+  return (
+    <div className="mt-3 border-t border-border-hairline pt-2">
+      <div className="mb-1 flex items-center justify-between">
+        <span className="font-semibold text-text-secondary">RENDERS ({elapsedSec}s)</span>
+        <button
+          type="button"
+          className={buttonClass}
+          onClick={() => {
+            resetRenderCounts()
+            setSince(Date.now())
+          }}
+        >
+          Reset
+        </button>
+      </div>
+      {counts.length === 0 ? (
+        <p className="text-[10px] text-text-muted">No instrumented component has rendered yet.</p>
+      ) : (
+        <ul className="max-h-48 overflow-y-auto tabular-nums" aria-label="Render counts">
+          {counts.map(({ name, count }) => (
+            <li key={name} className="flex justify-between gap-2">
+              <span className="truncate text-text-secondary">{name}</span>
+              <span>
+                {count} <span className="text-text-muted">({(count / elapsedSec).toFixed(1)}/s)</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 /**
  * Dev-only control panel for MockMarketDataSource, toggled with `~`.
@@ -125,6 +169,8 @@ export function MockDevtoolsPanel({ client }: MockDevtoolsPanelProps) {
           Regenerate universe
         </button>
       </div>
+
+      <RenderCountOverlay />
 
       <p className="mt-2 text-[10px] text-text-muted">Press ~ to toggle</p>
     </div>

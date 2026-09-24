@@ -21,7 +21,8 @@ const chipInactive = 'border-border text-text-secondary hover:border-text-second
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className={cn(chipBase, active ? chipActive : chipInactive)}>
+    // aria-pressed: the selected state must not be conveyed by colour alone.
+    <button type="button" aria-pressed={active} onClick={onClick} className={cn(chipBase, active ? chipActive : chipInactive)}>
       {children}
     </button>
   )

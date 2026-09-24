@@ -31,6 +31,8 @@ export default {
           muted: 'rgb(var(--color-text-muted) / <alpha-value>)',
         },
         bullish: 'rgb(var(--color-bullish) / <alpha-value>)',
+        'bullish-text': 'rgb(var(--color-bullish-text) / <alpha-value>)',
+        'bearish-text': 'rgb(var(--color-bearish-text) / <alpha-value>)',
         bearish: 'rgb(var(--color-bearish) / <alpha-value>)',
         warning: 'rgb(var(--color-warning) / <alpha-value>)',
         neutral: 'rgb(var(--color-neutral) / <alpha-value>)',

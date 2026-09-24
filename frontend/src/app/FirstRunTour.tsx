@@ -19,11 +19,6 @@ const STEPS: readonly TourStep[] = [
     body:
       'A BUY needs RSI inside the buy band on a candle that is exactly the 2nd green Heikin-Ashi candle in a row — not the 5th, not the 1st. SELL mirrors that with the sell band and a 2nd red candle. Breakouts are a separate, independent check against a rolling price range.',
   },
-  {
-    title: 'The replay bar',
-    body:
-      'The bar at the bottom drives the same mock market backward and forward in simulated time — scrub it, step one bar at a time, or jump straight to the next bar where something fires. The table always reflects exactly what a real scan would have shown at that moment.',
-  },
 ]
 
 export function FirstRunTour() {

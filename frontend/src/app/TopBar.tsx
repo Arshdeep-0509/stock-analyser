@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { FlaskConical, Keyboard, Moon, Settings, Sun, TrendingUp } from 'lucide-react'
+import { cn } from '../lib/cn'
 import { formatISTTime } from '../lib/formatters'
 import { getMarketSession, type MarketSession } from '../lib/marketSession'
 import { StatusDot } from '../components/ui/StatusDot'
@@ -38,6 +39,25 @@ export function TopBar() {
           {/* Wordmark drops to just the logo mark below lg. */}
           <span className="hidden text-sm font-semibold tracking-tight lg:inline">RSI-HA</span>
         </Link>
+        <nav aria-label="Pages" className="hidden shrink-0 items-center gap-1 sm:flex">
+          {[
+            { to: '/rsi-ha', label: 'Screener' },
+            { to: '/intraday', label: 'Intraday' },
+          ].map(({ to, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                cn(
+                  'rounded px-2 py-1 text-xs font-medium transition-colors',
+                  isActive ? 'bg-surface text-neutral' : 'text-text-secondary hover:text-text-primary',
+                )
+              }
+            >
+              {label}
+            </NavLink>
+          ))}
+        </nav>
         <Badge
           variant="warning"
           outline
@@ -59,8 +79,12 @@ export function TopBar() {
           wide enough to overflow that width if they joined in at the same
           breakpoint — confirmed by scripts/responsive-check.mjs at 768px.
         */}
-        <span className="hidden shrink-0 font-mono text-xs tabular-nums text-text-secondary lg:inline">
-          {formatISTTime(now)} IST (simulated market clock)
+        {/* The "(simulated market clock)" suffix joins at xl: with the Screener/Intraday nav on the left, the full string overflowed at exactly 1024px. Below xl the same words stay available as the tooltip, and the PROTOTYPE — SIMULATED DATA pill is visible at every width regardless. */}
+        <span
+          className="hidden shrink-0 font-mono text-xs tabular-nums text-text-secondary lg:inline"
+          title={`${formatISTTime(now)} IST (simulated market clock)`}
+        >
+          {formatISTTime(now)} IST<span className="hidden xl:inline"> (simulated market clock)</span>
         </span>
         <Badge variant={sessionVariant[session]} className="hidden shrink-0 lg:inline-flex">
           {session}

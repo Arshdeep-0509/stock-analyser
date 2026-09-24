@@ -17,7 +17,7 @@ import type { AnalyzedCandle, Candle } from '../../types/domain'
 import { ExchangeChip, LtpCell, SignalBadge } from './cells'
 import { CHART_HEIGHT_CLASS } from './chartHeight'
 import { getInstrumentType, isDerivedRow } from './rowHelpers'
-import { SignalChart } from './SignalChart'
+import { ChartSkeleton, LazySignalChart } from './LazySignalChart'
 
 export interface SignalDetailProps {
   row: ScreenerRow | null
@@ -97,12 +97,26 @@ export function SignalDetail({ row, rowList, store, onClose, onNavigate }: Signa
     // changes, so a stale chart from the PREVIOUS row never flashes while
     // this row's candles are still in flight.
     setCandles(null)
-    if (!row?.token) return
+    if (!row) return
+    // A CE/PE row's RSI and time are INHERITED from its underlying (see the
+    // notice below), so the chart, its RSI panel and the last-bars table must
+    // show the UNDERLYING's candles — charting the option's own series would
+    // put an option RSI next to the underlying's inherited one. If the
+    // underlying can't be resolved, show no chart rather than the wrong one.
+    const source = isDerivedRow(row)
+      ? (store.getState().universe.find((entry) => entry.symbol === row.derivedFrom) ?? null)
+      : row.token
+        ? { token: row.token, exchange: row.exchange }
+        : null
+    if (!source) {
+      setCandles([])
+      return
+    }
     let cancelled = false
     const targetMinutes = parseIntervalMinutes(store.getState().params.candleInterval)
     void store
       .getState()
-      .fetchCandlesForToken(row.token, row.exchange)
+      .fetchCandlesForToken(source.token, source.exchange)
       .then((base) => {
         if (cancelled) return
         // Chart candles must go through the same resampling step the
@@ -206,7 +220,7 @@ export function SignalDetail({ row, rowList, store, onClose, onNavigate }: Signa
               // bug) should take out just this chart, not the whole drawer
               // or the table behind it.
               <PanelErrorBoundary panelName="Chart" diagnostics={() => ({ symbol: row.symbol, signal: row.signal })}>
-                <SignalChart candles={candles} analyzed={analyzed} params={params} row={row} showRawOverlay={showRawOverlay} />
+                <LazySignalChart candles={candles} analyzed={analyzed} params={params} row={row} showRawOverlay={showRawOverlay} />
               </PanelErrorBoundary>
             )}
           </div>
@@ -297,19 +311,6 @@ export function SignalDetail({ row, rowList, store, onClose, onNavigate }: Signa
           </Tooltip>
         </div>
       </div>
-    </div>
-  )
-}
-
-function ChartSkeleton() {
-  return (
-    <div className={cn('flex flex-col justify-end gap-1 p-2', CHART_HEIGHT_CLASS)} aria-label="Loading chart" role="status">
-      <div className="flex flex-1 items-end gap-1">
-        {Array.from({ length: 24 }, (_, i) => (
-          <Skeleton key={i} className="w-full" style={{ height: `${20 + ((i * 37) % 60)}%` }} />
-        ))}
-      </div>
-      <Skeleton className="h-4 w-full" />
     </div>
   )
 }

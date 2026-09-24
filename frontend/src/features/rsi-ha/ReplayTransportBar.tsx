@@ -187,6 +187,7 @@ export function ReplayTransportBar({ dataSource, store }: ReplayTransportBarProp
           key={speed}
           type="button"
           onClick={() => dataSource.setSpeed(speed)}
+          aria-pressed={devState.clockSpeed === speed}
           className={cn(
             'h-8 shrink-0 rounded border px-1.5 text-xs sm:h-auto sm:py-0.5',
             devState.clockSpeed === speed ? 'border-neutral text-neutral' : 'border-border text-text-secondary hover:text-text-primary',

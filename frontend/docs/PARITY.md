@@ -43,6 +43,34 @@ integration-level coverage. The handful of still-uncovered lines (see the
 verification report's per-file table) are single defensive branches, not
 untested logic paths of any size.
 
+## `/intraday` reuse of the parity-locked engine
+
+`/intraday` adds **no** strategy logic. Wherever it shows something the
+Python defines (a breakout, a Heikin-Ashi direction, the F&O universe), it
+calls the same `src/strategy/` function `/rsi-ha` calls, with
+`DEFAULT_PARAMS` (byte-identical to the Python constants). Everything it
+*invents* (Strength, the meters, Smart Money, the cap-weight approximation)
+lives in `src/analytics/` and is documented separately in
+[`ANALYTICS.md`](./ANALYTICS.md) — none of it feeds back into the engine.
+
+| Strategy function (Python source) | Called from | What /intraday uses it for |
+| --- | --- | --- |
+| `loadFnoFuturesUniverse()` — `load_fno_futures_universe()` | `buildFnoUniverse()` in [`src/store/intradayStore.ts`](../src/store/intradayStore.ts) | The F&O underlying set (nearest-expiry FUTSTK per company). Sector/index membership is attached *afterwards* by `enrichInstrument()` ([`src/analytics/enrich.ts`](../src/analytics/enrich.ts)); the loader is untouched |
+| `checkBreakout()` — `check_breakout()` | `computeIntradayRow()` in [`src/analytics/intraday.ts`](../src/analytics/intraday.ts) | `row.breakout` / `row.breakoutLevel`: the Breakout / BreakDown panels, the quote-strip counts, the per-sector breakout bars, the `breakoutOnly` filter |
+| `computeHeikinAshi()` — `compute_heikin_ashi()` | `computeIntradayRow()` in [`src/analytics/intraday.ts`](../src/analytics/intraday.ts) | `row.intradayDir` = colour of the last closed HA candle (the Intraday ▲/▼ arrow and the direction filter) |
+| `analyzeCandles()` (→ `computeRsi()` + `computeHeikinAshi()`) | `InstrumentDrawer` in [`src/features/intraday/InstrumentDrawer.tsx`](../src/features/intraday/InstrumentDrawer.tsx) | The drill-down chart, drawn by /rsi-ha's own `SignalChart` (breakout level line included), plus a join to the screener store for the name's current BUY/SELL status |
+| The forming-candle drop — `dropFormingCandle()` | Inside every `fetchHistoricalCandles()` / `fetchDailyBars()` via `parseHistoricalCandlesResponse()` ([`src/data/parseCandles.ts`](../src/data/parseCandles.ts)) | Every candle /intraday computes from is closed, exactly as the screener's |
+| `parseIntervalMinutes()` / `DEFAULT_PARAMS.candleInterval` | `subscribeToUniverseTicks()` in [`intradayStore.ts`](../src/store/intradayStore.ts) | Bar-close detection: strength / breakout / intradayDir are recomputed **only** when a tick lands in a new 5-minute bucket, never mid-bar (the same "closed candles only" rule `check_breakout()` itself relies on). A dev-only assertion (`assertBarBoundaryInvariant()`) throws if any of the three changes between bar boundaries |
+
+**Cross-check.** [`scripts/breakoutCrossCheck.ts`](../scripts/breakoutCrossCheck.ts)
+(`npm run check:breakouts`) runs `/intraday`'s real load pipeline and
+`/rsi-ha`'s real `scanWatchlist()` against identical mock instances at five
+frozen instants across one session, and asserts that every `/intraday`
+breakout row has a matching scanner breakout on the same token, direction,
+level **and closed-bar timestamp** — and the converse. Current result: 34
+breakout rows and 416 non-breakout rows compared across the five instants,
+0 mismatches.
+
 ## Deliberate deviations — UI-layer only
 
 Everything below changes what the user can **choose to feed into** the
